@@ -58,6 +58,7 @@ model UserSession {
 
   @@index([refreshToken])
   @@index([userId, isRevoked])
+  @@index([userId, id])
   @@index([isRevoked, expiresAt])
   @@map("user_sessions")
 }
