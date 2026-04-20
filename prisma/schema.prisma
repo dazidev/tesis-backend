@@ -20,20 +20,44 @@ enum UserStatus {
 }
 
 model User {
-  id             String      @default(uuid()) @id
+  id             String         @default(uuid()) @id
   name           String
   lastname       String
-  email          String      @unique
+  email          String         @unique
   password       String
   invitationCode String?
   roles          UserRole[]
-  status         UserStatus  @default(active)
+  status         UserStatus     @default(active)
   lawyerId       String?
 
-  createdAt      DateTime    @default(now()) @db.Timestamptz()
-  updatedAt      DateTime    @updatedAt @db.Timestamptz()
+  createdAt      DateTime       @default(now()) @db.Timestamptz()
+  updatedAt      DateTime       @updatedAt @db.Timestamptz()
+
+  userSessions   UserSession[]
 
   @@index([email])
   @@index([roles])
   @@map("users")
+
+}
+
+model UserSession {
+  id            String     @default(uuid()) @id
+  refreshToken  String
+  expiresAt     DateTime   @db.Timestamptz()
+  isRevoked     Boolean    @default(false)
+  revokedAt     DateTime?  @db.Timestamptz()
+  revokedReason String?
+  deviceId      String
+  deviceInfo    String
+  ipAddress     String
+  createdAt     DateTime   @default(now()) @db.Timestamptz()
+  updatedAt     DateTime   @updatedAt @db.Timestamptz()
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([refreshToken])
+  @@index([userId, isRevoked])
+  @@index([isRevoked, expiresAt])
+  @@map("user_sessions")
 }
