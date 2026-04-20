@@ -13,4 +13,5 @@ export interface User {
   lawyerId?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  sessionId?: string;
 }

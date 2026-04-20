@@ -6,11 +6,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { PrismaModule } from 'src/modules/prisma/prisma.module';
-import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
+import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 
 @Module({
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtAccessStrategy, JwtRefreshStrategy],
   imports: [
     PrismaModule,
     ConfigModule,
@@ -21,12 +22,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         return {
-          secret: configService.get('JWT_SECRET'),
-          signOptions: { expiresIn: '2h' },
+          secret: configService.get('JWT_ACCESS_SECRET'),
+          signOptions: { expiresIn: configService.get('TIME_REFRESH_TOKEN') },
         };
       },
     }),
   ],
-  exports: [JwtStrategy, PassportModule, JwtModule],
+  exports: [JwtAccessStrategy, PassportModule, JwtModule],
 })
 export class AuthModule {}

@@ -8,6 +8,8 @@ import {
   Delete,
   UseGuards,
   SetMetadata,
+  Res,
+  Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateUserDto, LoginUserDto } from './dto';
@@ -17,8 +19,9 @@ import { GetUser, RawHeaders } from './decorators';
 import type { User } from './interfaces/user';
 import { UserRoleGuard } from './guards/user-role.guard';
 import { RoleProtected } from './decorators/role-protected.decorator';
-import { ValidRoles } from './interfaces';
+import { AuthStrategy, ValidRoles } from './interfaces';
 import { Auth } from './decorators/auth.decorator';
+import { Request, Response } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -30,8 +33,52 @@ export class AuthController {
   }
 
   @Post('login')
-  loginUser(@Body() loginUserDto: LoginUserDto) {
-    return this.authService.login(loginUserDto);
+  async loginUser(
+    @Body() loginUserDto: LoginUserDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { user, accessToken, refreshToken } =
+      await this.authService.login(loginUserDto);
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: false, //! true in production
+      sameSite: 'lax', //! strict in production
+      path: '/api/auth/refresh',
+    });
+
+    return {
+      ...user,
+      accessToken,
+    };
+  }
+
+  @Get('test')
+  test(@Req() req: Request) {
+    console.log(req.cookies);
+    return 'ok';
+  }
+
+  @Get('refresh')
+  @UseGuards(AuthGuard(AuthStrategy.REFRESH))
+  async getRefreshToken(
+    @GetUser() user: User,
+    @GetUser('sessionId') sessionId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { accessToken, refreshToken } =
+      await this.authService.getRefreshToken(user, sessionId);
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: false, //! true in production
+      sameSite: 'lax', //! strict in production
+      path: '/api/auth/refresh',
+    });
+
+    return {
+      accessToken,
+    };
   }
 
   @Get('private')
@@ -64,7 +111,7 @@ export class AuthController {
   }
 
   @Get('private3')
-  @Auth(ValidRoles.admin)
+  @Auth(ValidRoles.client)
   privateRoute3(@GetUser() user: User) {
     return {
       ok: true,

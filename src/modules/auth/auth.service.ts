@@ -10,13 +10,19 @@ import { PrismaService } from 'src/modules/prisma/prisma.service';
 
 import * as bcrypt from 'bcrypt';
 import { Prisma } from 'src/generated/prisma/client';
-import { JwtPayload } from './interfaces/jwt-payload.interface';
+import {
+  JwtAccessPayload,
+  JwtRefreshPayload,
+} from './interfaces/jwt-payload.interface';
+import { ConfigService } from '@nestjs/config';
+import { User } from './interfaces';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -42,7 +48,7 @@ export class AuthService {
 
       return {
         ...user,
-        token: this.generateJwtToken({ id: user.id }),
+        token: this.generateJwtAccessToken({ id: user.id }),
       };
     } catch (error) {
       this.handleDBErrors(error);
@@ -62,11 +68,79 @@ export class AuthService {
       if (!bcrypt.compareSync(pass, user.password))
         throw new Error('Credentials are not valid');
 
+      const timeExpires = parseInt(
+        this.configService.get('TIME_REFRESH_TOKEN') ?? '7d',
+      );
+      const expiresAt = new Date(
+        Date.now() + 1000 * 60 * 60 * 24 * timeExpires,
+      );
+
+      const initialSession = await this.prisma.userSession.create({
+        data: {
+          deviceId: '',
+          deviceInfo: '',
+          ipAddress: '',
+          userId: user.id,
+          refreshToken: '',
+          expiresAt,
+        },
+      });
+      if (!initialSession) throw new Error('session not created');
+
+      const payload: JwtRefreshPayload = {
+        userId: user.id,
+        sessionId: initialSession.id,
+      };
+
+      const refreshToken = this.generateJwtRefreshToken(payload);
+
+      const session = await this.prisma.userSession.update({
+        data: { refreshToken: bcrypt.hashSync(refreshToken, 10) },
+        where: { id: initialSession.id },
+      });
+
+      if (!session) throw new Error('session not updated');
+
       const { password, createdAt, updatedAt, ...result } = user;
 
       return {
-        ...result,
-        token: this.generateJwtToken({ id: user.id }),
+        user: { ...result },
+        accessToken: this.generateJwtAccessToken({ id: user.id }),
+        refreshToken,
+      };
+    } catch (error) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async getRefreshToken(user: User, sessionId: string) {
+    try {
+      const timeExpires = parseInt(
+        this.configService.get('TIME_REFRESH_TOKEN') ?? '7d',
+      );
+      const expiresAt = new Date(
+        Date.now() + 1000 * 60 * 60 * 24 * timeExpires,
+      );
+
+      const refreshToken = this.generateJwtRefreshToken({
+        userId: user.id,
+        sessionId: sessionId,
+      });
+
+      const session = await this.prisma.userSession.update({
+        data: { refreshToken: bcrypt.hashSync(refreshToken, 10), expiresAt },
+        where: { id: sessionId },
+      });
+
+      if (!session) throw new Error('session not updated');
+
+      const accessToken = this.generateJwtAccessToken({
+        id: user.id,
+      });
+
+      return {
+        accessToken,
+        refreshToken,
       };
     } catch (error) {
       this.handleDBErrors(error);
@@ -89,8 +163,16 @@ export class AuthService {
     return `This action removes a #${id} auth`;
   }
 
-  private generateJwtToken(payload: JwtPayload) {
+  private generateJwtAccessToken(payload: JwtAccessPayload) {
     const token = this.jwtService.sign(payload);
+    return token;
+  }
+
+  private generateJwtRefreshToken(payload: JwtRefreshPayload) {
+    const token = this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+      expiresIn: '7d',
+    });
     return token;
   }
 
