@@ -385,7 +385,8 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 export const ModelName = {
   User: 'User',
-  UserSession: 'UserSession'
+  UserSession: 'UserSession',
+  UserInvitation: 'UserInvitation'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -401,7 +402,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "userSession"
+    modelProps: "user" | "userSession" | "userInvitation"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -553,6 +554,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    UserInvitation: {
+      payload: Prisma.$UserInvitationPayload<ExtArgs>
+      fields: Prisma.UserInvitationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.UserInvitationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.UserInvitationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>
+        }
+        findFirst: {
+          args: Prisma.UserInvitationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.UserInvitationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>
+        }
+        findMany: {
+          args: Prisma.UserInvitationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>[]
+        }
+        create: {
+          args: Prisma.UserInvitationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>
+        }
+        createMany: {
+          args: Prisma.UserInvitationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.UserInvitationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>[]
+        }
+        delete: {
+          args: Prisma.UserInvitationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>
+        }
+        update: {
+          args: Prisma.UserInvitationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>
+        }
+        deleteMany: {
+          args: Prisma.UserInvitationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.UserInvitationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.UserInvitationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>[]
+        }
+        upsert: {
+          args: Prisma.UserInvitationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserInvitationPayload>
+        }
+        aggregate: {
+          args: Prisma.UserInvitationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateUserInvitation>
+        }
+        groupBy: {
+          args: Prisma.UserInvitationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserInvitationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.UserInvitationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserInvitationCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -598,7 +673,6 @@ export const UserScalarFieldEnum = {
   lastname: 'lastname',
   email: 'email',
   password: 'password',
-  invitationCode: 'invitationCode',
   roles: 'roles',
   status: 'status',
   lawyerId: 'lawyerId',
@@ -625,6 +699,21 @@ export const UserSessionScalarFieldEnum = {
 } as const
 
 export type UserSessionScalarFieldEnum = (typeof UserSessionScalarFieldEnum)[keyof typeof UserSessionScalarFieldEnum]
+
+
+export const UserInvitationScalarFieldEnum = {
+  id: 'id',
+  token: 'token',
+  toEmail: 'toEmail',
+  expiresAt: 'expiresAt',
+  isUsed: 'isUsed',
+  usedAt: 'usedAt',
+  createdById: 'createdById',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type UserInvitationScalarFieldEnum = (typeof UserInvitationScalarFieldEnum)[keyof typeof UserInvitationScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -830,6 +919,7 @@ export type PrismaClientOptions = ({
 export type GlobalOmitConfig = {
   user?: Prisma.UserOmit
   userSession?: Prisma.UserSessionOmit
+  userInvitation?: Prisma.UserInvitationOmit
 }
 
 /* Types for Logging */

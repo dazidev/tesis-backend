@@ -10,4 +10,5 @@
  */
 export type * from './models/User'
 export type * from './models/UserSession'
+export type * from './models/UserInvitation'
 export type * from './commonInputTypes'

@@ -20,25 +20,24 @@ enum UserStatus {
 }
 
 model User {
-  id             String         @default(uuid()) @id
-  name           String
-  lastname       String
-  email          String         @unique
-  password       String
-  invitationCode String?
-  roles          UserRole[]
-  status         UserStatus     @default(active)
-  lawyerId       String?
+  id              String            @default(uuid()) @id
+  name            String
+  lastname        String
+  email           String            @unique
+  password        String
+  roles           UserRole[]
+  status          UserStatus        @default(active)
+  lawyerId        String?
 
-  createdAt      DateTime       @default(now()) @db.Timestamptz()
-  updatedAt      DateTime       @updatedAt @db.Timestamptz()
+  createdAt       DateTime          @default(now()) @db.Timestamptz()
+  updatedAt       DateTime          @updatedAt @db.Timestamptz()
 
-  userSessions   UserSession[]
+  userSessions    UserSession[]
+  userInvitations UserInvitation[]
 
   @@index([email])
   @@index([roles])
   @@map("users")
-
 }
 
 model UserSession {
@@ -61,4 +60,21 @@ model UserSession {
   @@index([userId, id])
   @@index([isRevoked, expiresAt])
   @@map("user_sessions")
+}
+
+model UserInvitation {
+  id          String     @default(uuid()) @id
+  token       String     @unique
+  toEmail     String
+  expiresAt   DateTime   @db.Timestamptz()
+  isUsed      Boolean    @default(false)
+  usedAt      DateTime?  @db.Timestamptz()
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now()) @db.Timestamptz()
+  updatedAt   DateTime   @updatedAt @db.Timestamptz()
+
+  @@index([token])
+  @@index([toEmail])
+  @@map("user_invitations")
 }
