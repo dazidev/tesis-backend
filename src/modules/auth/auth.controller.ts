@@ -44,13 +44,29 @@ export class AuthController {
       httpOnly: true,
       secure: false, //! true in production
       sameSite: 'lax', //! strict in production
-      path: '/api/auth/refresh',
+      path: '/api/auth',
     });
 
     return {
       ...user,
       accessToken,
     };
+  }
+
+  @Post('logout')
+  @UseGuards(AuthGuard(AuthStrategy.REFRESH))
+  async logoutUser(
+    @GetUser() user: User,
+    @GetUser('sessionId') sessionId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.authService.logout(user, sessionId);
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/api/auth',
+    });
   }
 
   @Get('test')

@@ -57,7 +57,13 @@ export class AuthService {
 
   async login(loginUserDto: LoginUserDto) {
     try {
-      const { email, password: pass } = loginUserDto;
+      const {
+        email,
+        password: pass,
+        deviceId,
+        deviceInfo,
+        ipAddress,
+      } = loginUserDto;
 
       const user = await this.prisma.user.findUnique({
         where: { email },
@@ -77,9 +83,9 @@ export class AuthService {
 
       const initialSession = await this.prisma.userSession.create({
         data: {
-          deviceId: '',
-          deviceInfo: '',
-          ipAddress: '',
+          deviceId,
+          deviceInfo,
+          ipAddress,
           userId: user.id,
           refreshToken: '',
           expiresAt,
@@ -108,6 +114,29 @@ export class AuthService {
         accessToken: this.generateJwtAccessToken({ id: user.id }),
         refreshToken,
       };
+    } catch (error) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async logout(user: User, sessionId: string) {
+    try {
+      const session = await this.prisma.userSession.findUnique({
+        where: { id: sessionId },
+      });
+
+      if (!session) throw new Error('session not found');
+      if (session.userId !== user.id) throw new Error('unauthorized session');
+      if (session.isRevoked) return;
+
+      await this.prisma.userSession.update({
+        where: { id: sessionId },
+        data: {
+          isRevoked: true,
+          revokedAt: new Date(),
+          revokedReason: 'logout',
+        },
+      });
     } catch (error) {
       this.handleDBErrors(error);
     }
