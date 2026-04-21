@@ -28,6 +28,7 @@ export type UserInvitationMinAggregateOutputType = {
   id: string | null
   token: string | null
   toEmail: string | null
+  role: $Enums.UserRole | null
   expiresAt: Date | null
   isUsed: boolean | null
   usedAt: Date | null
@@ -40,6 +41,7 @@ export type UserInvitationMaxAggregateOutputType = {
   id: string | null
   token: string | null
   toEmail: string | null
+  role: $Enums.UserRole | null
   expiresAt: Date | null
   isUsed: boolean | null
   usedAt: Date | null
@@ -52,6 +54,7 @@ export type UserInvitationCountAggregateOutputType = {
   id: number
   token: number
   toEmail: number
+  role: number
   expiresAt: number
   isUsed: number
   usedAt: number
@@ -66,6 +69,7 @@ export type UserInvitationMinAggregateInputType = {
   id?: true
   token?: true
   toEmail?: true
+  role?: true
   expiresAt?: true
   isUsed?: true
   usedAt?: true
@@ -78,6 +82,7 @@ export type UserInvitationMaxAggregateInputType = {
   id?: true
   token?: true
   toEmail?: true
+  role?: true
   expiresAt?: true
   isUsed?: true
   usedAt?: true
@@ -90,6 +95,7 @@ export type UserInvitationCountAggregateInputType = {
   id?: true
   token?: true
   toEmail?: true
+  role?: true
   expiresAt?: true
   isUsed?: true
   usedAt?: true
@@ -175,6 +181,7 @@ export type UserInvitationGroupByOutputType = {
   id: string
   token: string
   toEmail: string
+  role: $Enums.UserRole
   expiresAt: Date
   isUsed: boolean
   usedAt: Date | null
@@ -208,6 +215,7 @@ export type UserInvitationWhereInput = {
   id?: Prisma.StringFilter<"UserInvitation"> | string
   token?: Prisma.StringFilter<"UserInvitation"> | string
   toEmail?: Prisma.StringFilter<"UserInvitation"> | string
+  role?: Prisma.EnumUserRoleFilter<"UserInvitation"> | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFilter<"UserInvitation"> | Date | string
   isUsed?: Prisma.BoolFilter<"UserInvitation"> | boolean
   usedAt?: Prisma.DateTimeNullableFilter<"UserInvitation"> | Date | string | null
@@ -221,6 +229,7 @@ export type UserInvitationOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   token?: Prisma.SortOrder
   toEmail?: Prisma.SortOrder
+  role?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
   isUsed?: Prisma.SortOrder
   usedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -237,6 +246,7 @@ export type UserInvitationWhereUniqueInput = Prisma.AtLeast<{
   OR?: Prisma.UserInvitationWhereInput[]
   NOT?: Prisma.UserInvitationWhereInput | Prisma.UserInvitationWhereInput[]
   toEmail?: Prisma.StringFilter<"UserInvitation"> | string
+  role?: Prisma.EnumUserRoleFilter<"UserInvitation"> | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFilter<"UserInvitation"> | Date | string
   isUsed?: Prisma.BoolFilter<"UserInvitation"> | boolean
   usedAt?: Prisma.DateTimeNullableFilter<"UserInvitation"> | Date | string | null
@@ -250,6 +260,7 @@ export type UserInvitationOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   token?: Prisma.SortOrder
   toEmail?: Prisma.SortOrder
+  role?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
   isUsed?: Prisma.SortOrder
   usedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -268,6 +279,7 @@ export type UserInvitationScalarWhereWithAggregatesInput = {
   id?: Prisma.StringWithAggregatesFilter<"UserInvitation"> | string
   token?: Prisma.StringWithAggregatesFilter<"UserInvitation"> | string
   toEmail?: Prisma.StringWithAggregatesFilter<"UserInvitation"> | string
+  role?: Prisma.EnumUserRoleWithAggregatesFilter<"UserInvitation"> | $Enums.UserRole
   expiresAt?: Prisma.DateTimeWithAggregatesFilter<"UserInvitation"> | Date | string
   isUsed?: Prisma.BoolWithAggregatesFilter<"UserInvitation"> | boolean
   usedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"UserInvitation"> | Date | string | null
@@ -280,6 +292,7 @@ export type UserInvitationCreateInput = {
   id?: string
   token: string
   toEmail: string
+  role: $Enums.UserRole
   expiresAt: Date | string
   isUsed?: boolean
   usedAt?: Date | string | null
@@ -292,6 +305,7 @@ export type UserInvitationUncheckedCreateInput = {
   id?: string
   token: string
   toEmail: string
+  role: $Enums.UserRole
   expiresAt: Date | string
   isUsed?: boolean
   usedAt?: Date | string | null
@@ -304,6 +318,7 @@ export type UserInvitationUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   token?: Prisma.StringFieldUpdateOperationsInput | string
   toEmail?: Prisma.StringFieldUpdateOperationsInput | string
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   isUsed?: Prisma.BoolFieldUpdateOperationsInput | boolean
   usedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -316,6 +331,7 @@ export type UserInvitationUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   token?: Prisma.StringFieldUpdateOperationsInput | string
   toEmail?: Prisma.StringFieldUpdateOperationsInput | string
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   isUsed?: Prisma.BoolFieldUpdateOperationsInput | boolean
   usedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -328,6 +344,7 @@ export type UserInvitationCreateManyInput = {
   id?: string
   token: string
   toEmail: string
+  role: $Enums.UserRole
   expiresAt: Date | string
   isUsed?: boolean
   usedAt?: Date | string | null
@@ -340,6 +357,7 @@ export type UserInvitationUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   token?: Prisma.StringFieldUpdateOperationsInput | string
   toEmail?: Prisma.StringFieldUpdateOperationsInput | string
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   isUsed?: Prisma.BoolFieldUpdateOperationsInput | boolean
   usedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -351,6 +369,7 @@ export type UserInvitationUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   token?: Prisma.StringFieldUpdateOperationsInput | string
   toEmail?: Prisma.StringFieldUpdateOperationsInput | string
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   isUsed?: Prisma.BoolFieldUpdateOperationsInput | boolean
   usedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -373,6 +392,7 @@ export type UserInvitationCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   token?: Prisma.SortOrder
   toEmail?: Prisma.SortOrder
+  role?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
   isUsed?: Prisma.SortOrder
   usedAt?: Prisma.SortOrder
@@ -385,6 +405,7 @@ export type UserInvitationMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   token?: Prisma.SortOrder
   toEmail?: Prisma.SortOrder
+  role?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
   isUsed?: Prisma.SortOrder
   usedAt?: Prisma.SortOrder
@@ -397,6 +418,7 @@ export type UserInvitationMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   token?: Prisma.SortOrder
   toEmail?: Prisma.SortOrder
+  role?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
   isUsed?: Prisma.SortOrder
   usedAt?: Prisma.SortOrder
@@ -447,10 +469,15 @@ export type UserInvitationUncheckedUpdateManyWithoutCreatedByNestedInput = {
   deleteMany?: Prisma.UserInvitationScalarWhereInput | Prisma.UserInvitationScalarWhereInput[]
 }
 
+export type EnumUserRoleFieldUpdateOperationsInput = {
+  set?: $Enums.UserRole
+}
+
 export type UserInvitationCreateWithoutCreatedByInput = {
   id?: string
   token: string
   toEmail: string
+  role: $Enums.UserRole
   expiresAt: Date | string
   isUsed?: boolean
   usedAt?: Date | string | null
@@ -462,6 +489,7 @@ export type UserInvitationUncheckedCreateWithoutCreatedByInput = {
   id?: string
   token: string
   toEmail: string
+  role: $Enums.UserRole
   expiresAt: Date | string
   isUsed?: boolean
   usedAt?: Date | string | null
@@ -502,6 +530,7 @@ export type UserInvitationScalarWhereInput = {
   id?: Prisma.StringFilter<"UserInvitation"> | string
   token?: Prisma.StringFilter<"UserInvitation"> | string
   toEmail?: Prisma.StringFilter<"UserInvitation"> | string
+  role?: Prisma.EnumUserRoleFilter<"UserInvitation"> | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFilter<"UserInvitation"> | Date | string
   isUsed?: Prisma.BoolFilter<"UserInvitation"> | boolean
   usedAt?: Prisma.DateTimeNullableFilter<"UserInvitation"> | Date | string | null
@@ -514,6 +543,7 @@ export type UserInvitationCreateManyCreatedByInput = {
   id?: string
   token: string
   toEmail: string
+  role: $Enums.UserRole
   expiresAt: Date | string
   isUsed?: boolean
   usedAt?: Date | string | null
@@ -525,6 +555,7 @@ export type UserInvitationUpdateWithoutCreatedByInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   token?: Prisma.StringFieldUpdateOperationsInput | string
   toEmail?: Prisma.StringFieldUpdateOperationsInput | string
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   isUsed?: Prisma.BoolFieldUpdateOperationsInput | boolean
   usedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -536,6 +567,7 @@ export type UserInvitationUncheckedUpdateWithoutCreatedByInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   token?: Prisma.StringFieldUpdateOperationsInput | string
   toEmail?: Prisma.StringFieldUpdateOperationsInput | string
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   isUsed?: Prisma.BoolFieldUpdateOperationsInput | boolean
   usedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -547,6 +579,7 @@ export type UserInvitationUncheckedUpdateManyWithoutCreatedByInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   token?: Prisma.StringFieldUpdateOperationsInput | string
   toEmail?: Prisma.StringFieldUpdateOperationsInput | string
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   isUsed?: Prisma.BoolFieldUpdateOperationsInput | boolean
   usedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -560,6 +593,7 @@ export type UserInvitationSelect<ExtArgs extends runtime.Types.Extensions.Intern
   id?: boolean
   token?: boolean
   toEmail?: boolean
+  role?: boolean
   expiresAt?: boolean
   isUsed?: boolean
   usedAt?: boolean
@@ -573,6 +607,7 @@ export type UserInvitationSelectCreateManyAndReturn<ExtArgs extends runtime.Type
   id?: boolean
   token?: boolean
   toEmail?: boolean
+  role?: boolean
   expiresAt?: boolean
   isUsed?: boolean
   usedAt?: boolean
@@ -586,6 +621,7 @@ export type UserInvitationSelectUpdateManyAndReturn<ExtArgs extends runtime.Type
   id?: boolean
   token?: boolean
   toEmail?: boolean
+  role?: boolean
   expiresAt?: boolean
   isUsed?: boolean
   usedAt?: boolean
@@ -599,6 +635,7 @@ export type UserInvitationSelectScalar = {
   id?: boolean
   token?: boolean
   toEmail?: boolean
+  role?: boolean
   expiresAt?: boolean
   isUsed?: boolean
   usedAt?: boolean
@@ -607,7 +644,7 @@ export type UserInvitationSelectScalar = {
   updatedAt?: boolean
 }
 
-export type UserInvitationOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "token" | "toEmail" | "expiresAt" | "isUsed" | "usedAt" | "createdById" | "createdAt" | "updatedAt", ExtArgs["result"]["userInvitation"]>
+export type UserInvitationOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "token" | "toEmail" | "role" | "expiresAt" | "isUsed" | "usedAt" | "createdById" | "createdAt" | "updatedAt", ExtArgs["result"]["userInvitation"]>
 export type UserInvitationInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   createdBy?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }
@@ -627,6 +664,7 @@ export type $UserInvitationPayload<ExtArgs extends runtime.Types.Extensions.Inte
     id: string
     token: string
     toEmail: string
+    role: $Enums.UserRole
     expiresAt: Date
     isUsed: boolean
     usedAt: Date | null
@@ -1060,6 +1098,7 @@ export interface UserInvitationFieldRefs {
   readonly id: Prisma.FieldRef<"UserInvitation", 'String'>
   readonly token: Prisma.FieldRef<"UserInvitation", 'String'>
   readonly toEmail: Prisma.FieldRef<"UserInvitation", 'String'>
+  readonly role: Prisma.FieldRef<"UserInvitation", 'UserRole'>
   readonly expiresAt: Prisma.FieldRef<"UserInvitation", 'DateTime'>
   readonly isUsed: Prisma.FieldRef<"UserInvitation", 'Boolean'>
   readonly usedAt: Prisma.FieldRef<"UserInvitation", 'DateTime'>

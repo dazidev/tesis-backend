@@ -66,6 +66,7 @@ model UserInvitation {
   id          String     @default(uuid()) @id
   token       String     @unique
   toEmail     String
+  role        UserRole
   expiresAt   DateTime   @db.Timestamptz()
   isUsed      Boolean    @default(false)
   usedAt      DateTime?  @db.Timestamptz()
