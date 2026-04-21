@@ -12,7 +12,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { CreateUserDto, LoginUserDto } from './dto';
+import { CreateUserDto, LoginUserDto, SendInvitationDto } from './dto';
 import { UpdateAuthDto } from './dto/update-auth.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { GetUser, RawHeaders } from './decorators';
@@ -69,12 +69,6 @@ export class AuthController {
     });
   }
 
-  @Get('test')
-  test(@Req() req: Request) {
-    console.log(req.cookies);
-    return 'ok';
-  }
-
   @Get('refresh')
   @UseGuards(AuthGuard(AuthStrategy.REFRESH))
   async getRefreshToken(
@@ -95,6 +89,15 @@ export class AuthController {
     return {
       accessToken,
     };
+  }
+
+  @Post('send-invitation')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  sendInvitation(
+    @GetUser() user: User,
+    @Body() sendInvitationDto: SendInvitationDto,
+  ) {
+    return this.authService.sendInvitation(user, sendInvitationDto);
   }
 
   @Get('private')
@@ -133,25 +136,5 @@ export class AuthController {
       ok: true,
       user,
     };
-  }
-
-  @Get()
-  findAll() {
-    return this.authService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.authService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateAuthDto: UpdateAuthDto) {
-    return this.authService.update(+id, updateAuthDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.authService.remove(+id);
   }
 }

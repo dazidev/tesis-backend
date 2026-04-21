@@ -2,19 +2,22 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { CreateUserDto, LoginUserDto } from './dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
-import { PrismaService } from 'src/modules/prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
 
 import * as bcrypt from 'bcrypt';
+import { v4 as uuidv4 } from 'uuid';
+
+import { CreateUserDto, LoginUserDto, SendInvitationDto } from './dto';
+import { PrismaService } from 'src/modules/prisma/prisma.service';
+
 import { Prisma } from 'src/generated/prisma/client';
 import {
   JwtAccessPayload,
   JwtRefreshPayload,
 } from './interfaces/jwt-payload.interface';
-import { ConfigService } from '@nestjs/config';
 import { User } from './interfaces';
 
 @Injectable()
@@ -176,20 +179,42 @@ export class AuthService {
     }
   }
 
-  findAll() {
-    return `This action returns all auth`;
-  }
+  async sendInvitation(user: User, sendInvitationDto: SendInvitationDto) {
+    try {
+      const { toEmail, role } = sendInvitationDto;
 
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
-  }
+      const isLawyer = user.roles.includes('lawyer');
 
-  update(id: number, updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
-  }
+      if (isLawyer && (role == 'admin' || role == 'lawyer'))
+        throw new UnauthorizedException(
+          'The role is not valid to perform this action',
+        );
 
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+      const tokenId = uuidv4();
+
+      const now = new Date();
+      const expiresAt = new Date(now.setDate(now.getDate() + 7));
+
+      const invitation = await this.prisma.userInvitation.create({
+        data: {
+          toEmail,
+          role,
+          token: bcrypt.hashSync(tokenId, 10),
+          expiresAt,
+          createdById: user.id,
+        },
+      });
+
+      if (!invitation) throw new Error('The invitation insert failed');
+
+      const { token, ...result } = invitation;
+
+      return {
+        ...result,
+      };
+    } catch (error) {
+      this.handleDBErrors(error);
+    }
   }
 
   private generateJwtAccessToken(payload: JwtAccessPayload) {
