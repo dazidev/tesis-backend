@@ -14,7 +14,4 @@ export class LoginUserDto {
   @IsString()
   @MinLength(3)
   readonly deviceInfo!: string;
-
-  @IsIP()
-  readonly ipAddress!: string;
 }

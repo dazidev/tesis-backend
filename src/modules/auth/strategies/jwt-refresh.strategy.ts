@@ -7,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 
 import { AuthStrategy, JwtRefreshPayload, User } from '../interfaces';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
+import { RefreshWebDto } from '../dto';
 
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(
@@ -21,21 +22,20 @@ export class JwtRefreshStrategy extends PassportStrategy(
       secretOrKey: configService.get('JWT_REFRESH_SECRET')!,
       ignoreExpiration: true,
       jwtFromRequest: ExtractJwt.fromExtractors([
-        (req) => req?.cookies?.refresh_token,
+        (req) => req?.body?.refreshToken,
       ]),
       passReqToCallback: true,
     });
   }
 
   async validate(req: Request, payload: JwtRefreshPayload): Promise<User> {
-    //! TODO: wrap in a try cath
     const { userId, sessionId } = payload;
-    const token = req.cookies?.refresh_token;
-    // console.log('cookies:', req.cookies);
 
-    // console.log('cookie: ' + token);
-    // console.log('userid: ' + userId);
-    // console.log('headers:', req.headers);
+    const { refreshToken } = req.body as RefreshWebDto;
+
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token is required');
+    }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
@@ -53,7 +53,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     if (session.expiresAt < new Date())
       throw new UnauthorizedException('Token not valid (2)');
 
-    if (!bcrypt.compareSync(token, session.refreshToken))
+    if (!bcrypt.compareSync(refreshToken, session.refreshToken))
       throw new UnauthorizedException('Token not valid (3)');
 
     const { password, ...result } = user;

@@ -58,15 +58,9 @@ export class AuthService {
     }
   }
 
-  async login(loginUserDto: LoginUserDto) {
+  async loginWeb(loginUserDto: LoginUserDto, ip: string) {
     try {
-      const {
-        email,
-        password: pass,
-        deviceId,
-        deviceInfo,
-        ipAddress,
-      } = loginUserDto;
+      const { email, password: pass, deviceId, deviceInfo } = loginUserDto;
 
       const user = await this.prisma.user.findUnique({
         where: { email },
@@ -77,18 +71,22 @@ export class AuthService {
       if (!bcrypt.compareSync(pass, user.password))
         throw new Error('Credentials are not valid');
 
-      const timeExpires = parseInt(
-        this.configService.get('TIME_REFRESH_TOKEN') ?? '7d',
-      );
-      const expiresAt = new Date(
-        Date.now() + 1000 * 60 * 60 * 24 * timeExpires,
-      );
+      const accessTokenExpiresIn =
+        parseInt(this.configService.get('TIME_ACCESS_TOKEN') ?? '20m') * 60; // SECONDS
+
+      const refreshTokenExpiresIn =
+        parseInt(this.configService.get('TIME_REFRESH_TOKEN') ?? '7d') *
+        60 *
+        60 *
+        24; // SECONDS
+
+      const expiresAt = new Date(Date.now() + 1000 * refreshTokenExpiresIn);
 
       const initialSession = await this.prisma.userSession.create({
         data: {
           deviceId,
           deviceInfo,
-          ipAddress,
+          ipAddress: ip,
           userId: user.id,
           refreshToken: '',
           expiresAt,
@@ -116,6 +114,9 @@ export class AuthService {
         user: { ...result },
         accessToken: this.generateJwtAccessToken({ id: user.id }),
         refreshToken,
+        accessTokenExpiresIn,
+        refreshTokenExpiresIn,
+        sessionId: session.id,
       };
     } catch (error) {
       this.handleDBErrors(error);
@@ -140,19 +141,25 @@ export class AuthService {
           revokedReason: 'logout',
         },
       });
+
+      return;
     } catch (error) {
       this.handleDBErrors(error);
     }
   }
 
-  async getRefreshToken(user: User, sessionId: string) {
+  async getRefreshTokenWeb(user: User, sessionId: string) {
     try {
-      const timeExpires = parseInt(
-        this.configService.get('TIME_REFRESH_TOKEN') ?? '7d',
-      );
-      const expiresAt = new Date(
-        Date.now() + 1000 * 60 * 60 * 24 * timeExpires,
-      );
+      const accessTokenExpiresIn =
+        parseInt(this.configService.get('TIME_ACCESS_TOKEN') ?? '20m') * 60; // SECONDS
+
+      const refreshTokenExpiresIn =
+        parseInt(this.configService.get('TIME_REFRESH_TOKEN') ?? '7d') *
+        60 *
+        60 *
+        24; // SECONDS
+
+      const expiresAt = new Date(Date.now() + 1000 * refreshTokenExpiresIn);
 
       const refreshToken = this.generateJwtRefreshToken({
         userId: user.id,
@@ -173,6 +180,8 @@ export class AuthService {
       return {
         accessToken,
         refreshToken,
+        accessTokenExpiresIn,
+        refreshTokenExpiresIn,
       };
     } catch (error) {
       this.handleDBErrors(error);

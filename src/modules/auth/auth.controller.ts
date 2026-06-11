@@ -1,19 +1,6 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  UseGuards,
-  SetMetadata,
-  Res,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateUserDto, LoginUserDto, SendInvitationDto } from './dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { GetUser, RawHeaders } from './decorators';
 import type { User } from './interfaces/user';
@@ -21,7 +8,7 @@ import { UserRoleGuard } from './guards/user-role.guard';
 import { RoleProtected } from './decorators/role-protected.decorator';
 import { AuthStrategy, ValidRoles } from './interfaces';
 import { Auth } from './decorators/auth.decorator';
-import { Request, Response } from 'express';
+import { GetRealIP } from './decorators/get-ip.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -32,63 +19,28 @@ export class AuthController {
     return this.authService.create(createUserDto);
   }
 
-  @Post('login')
-  async loginUser(
-    @Body() loginUserDto: LoginUserDto,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const { user, accessToken, refreshToken } =
-      await this.authService.login(loginUserDto);
-
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: false, //! true in production
-      sameSite: 'lax', //! strict in production
-      path: '/api/auth',
-    });
-
-    return {
-      ...user,
-      accessToken,
-    };
+  @Post('login-web')
+  async loginUser(@Body() loginUserDto: LoginUserDto, @GetRealIP() ip: string) {
+    console.log('ping');
+    return await this.authService.loginWeb(loginUserDto, ip);
   }
 
-  @Post('logout')
+  @Post('logout-web')
   @UseGuards(AuthGuard(AuthStrategy.REFRESH))
   async logoutUser(
     @GetUser() user: User,
     @GetUser('sessionId') sessionId: string,
-    @Res({ passthrough: true }) res: Response,
   ) {
-    await this.authService.logout(user, sessionId);
-    res.clearCookie('refresh_token', {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      path: '/api/auth',
-    });
+    return await this.authService.logout(user, sessionId);
   }
 
-  @Get('refresh')
+  @Post('refresh-web')
   @UseGuards(AuthGuard(AuthStrategy.REFRESH))
   async getRefreshToken(
     @GetUser() user: User,
     @GetUser('sessionId') sessionId: string,
-    @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, refreshToken } =
-      await this.authService.getRefreshToken(user, sessionId);
-
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: false, //! true in production
-      sameSite: 'lax', //! strict in production
-      path: '/api/auth/refresh',
-    });
-
-    return {
-      accessToken,
-    };
+    return await this.authService.getRefreshTokenWeb(user, sessionId);
   }
 
   @Post('send-invitation')
