@@ -1,26 +1,70 @@
-import { Injectable } from '@nestjs/common';
-import { CreateAdminDto } from './dto/create-admin.dto';
-import { UpdateAdminDto } from './dto/update-admin.dto';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { UserInivitationDto } from './dto/user-invitation.dto';
+import { generateInvitationToken, hashToken } from 'src/common';
+import { Prisma } from 'src/generated/prisma/client';
+import { BrevoService } from '../infrastructure/services/brevo.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AdminService {
-  create(createAdminDto: CreateAdminDto) {
-    return 'This action adds a new admin';
+  constructor(
+    private prisma: PrismaService,
+    private readonly brevoService: BrevoService,
+    private configService: ConfigService,
+  ) {}
+
+  async sendUserInvitation(userInivitationDto: UserInivitationDto) {
+    try {
+      const { toEmail, role, createdById } = userInivitationDto;
+      const token = generateInvitationToken();
+      const hashedToken = hashToken(token);
+
+      const invitation = await this.prisma.userInvitation.create({
+        data: {
+          token: hashedToken,
+          toEmail,
+          role,
+          createdById,
+          expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), // 7 dias
+        },
+      });
+
+      if (!invitation)
+        throw new Error('Hubo un problema al guardar la invitación.');
+
+      const invitationLink = `/auth/register?token=${token}`;
+
+      const msj = `Para registrarse use el siguiente link: ${this.configService.getOrThrow<string>('API_LINK') + invitationLink}`;
+
+      await this.brevoService.sendEmail(toEmail, 'Invitación de registro', msj);
+      return {
+        invitationLink,
+      };
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
   }
 
-  findAll() {
-    return `This action returns all admin`;
-  }
-
-  findOne(id: number) {
-    return `This action returns a #${id} admin`;
-  }
-
-  update(id: number, updateAdminDto: UpdateAdminDto) {
-    return `This action updates a #${id} admin`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} admin`;
+  private handleDBErrors(error: unknown): never {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      if (
+        Array.isArray(error.meta?.target) &&
+        error.meta?.target.includes('email')
+      ) {
+        throw new BadRequestException('Email already registered');
+      }
+      throw new BadRequestException('Insert fail');
+    } else if (error instanceof Error) {
+      throw new BadRequestException(error.message);
+    }
+    throw new InternalServerErrorException('Unknown error');
   }
 }

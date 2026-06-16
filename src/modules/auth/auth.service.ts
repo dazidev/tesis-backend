@@ -19,6 +19,8 @@ import {
   JwtRefreshPayload,
 } from './interfaces/jwt-payload.interface';
 import { User } from './interfaces';
+import { hashToken } from 'src/common';
+import { RegisterUserDto } from './dto/register-user.dto';
 
 @Injectable()
 export class AuthService {
@@ -222,6 +224,71 @@ export class AuthService {
         ...result,
       };
     } catch (error) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async getUserInvitation(token: string) {
+    try {
+      const tokenHash = hashToken(token);
+
+      const invitation = await this.prisma.userInvitation.findUnique({
+        select: {
+          id: true,
+          toEmail: true,
+          role: true,
+          expiresAt: true,
+          isUsed: true,
+        },
+        where: { token: tokenHash },
+      });
+
+      if (!invitation) throw new Error('La invitación no se encuentra.');
+
+      return {
+        ...invitation,
+      };
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async registerUser(registerUserDto: RegisterUserDto) {
+    try {
+      const { name, lastname, password, invitationId } = registerUserDto;
+
+      const invitation = await this.prisma.userInvitation.findUnique({
+        where: { id: invitationId },
+      });
+
+      if (!invitation)
+        throw new Error('No se encontró una invitacion con ese token.');
+
+      const user = await this.prisma.user.create({
+        data: {
+          name: name.trim(),
+          lastname: lastname.trim(),
+          email: invitation.toEmail.trim().toLowerCase(),
+          password: bcrypt.hashSync(password, 10),
+          roles: [invitation.role],
+        },
+        select: {
+          id: true,
+          name: true,
+          lastname: true,
+          email: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      await this.prisma.userInvitation.update({
+        data: { isUsed: true, usedAt: new Date(Date.now()) },
+        where: { id: invitationId },
+      });
+
+      return;
+    } catch (error: unknown) {
       this.handleDBErrors(error);
     }
   }

@@ -1,6 +1,11 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { CreateUserDto, LoginUserDto, SendInvitationDto } from './dto';
+import {
+  CreateUserDto,
+  LoginUserDto,
+  RegisterUserDto,
+  SendInvitationDto,
+} from './dto';
 import { AuthGuard } from '@nestjs/passport';
 import { GetUser, RawHeaders } from './decorators';
 import type { User } from './interfaces/user';
@@ -17,6 +22,11 @@ export class AuthController {
   @Post('register')
   createUser(@Body() createUserDto: CreateUserDto) {
     return this.authService.create(createUserDto);
+  }
+
+  @Post('register-user')
+  registerUser(@Body() registerUserDto: RegisterUserDto) {
+    return this.authService.registerUser(registerUserDto);
   }
 
   @Post('login-web')
@@ -50,6 +60,11 @@ export class AuthController {
     @Body() sendInvitationDto: SendInvitationDto,
   ) {
     return this.authService.sendInvitation(user, sendInvitationDto);
+  }
+
+  @Get('invitation/:token')
+  getUserInvitation(@Param('token') token: string) {
+    return this.authService.getUserInvitation(token);
   }
 
   @Get('private')
