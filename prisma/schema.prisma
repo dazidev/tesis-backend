@@ -35,6 +35,8 @@ model User {
   userSessions    UserSession[]
   userInvitations UserInvitation[]
 
+  adminLogs       Log[]
+
   @@index([email])
   @@index([roles])
   @@map("users")
@@ -77,4 +79,18 @@ model UserInvitation {
 
   @@index([toEmail])
   @@map("user_invitations")
+}
+
+model Log {
+  id          String    @default(uuid()) @id
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action      String
+  description String
+  createdAt   DateTime  @default(now()) @db.Timestamptz()
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("server_log")
 }
