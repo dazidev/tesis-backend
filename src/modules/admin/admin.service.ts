@@ -5,10 +5,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserInivitationDto } from './dto/user-invitation.dto';
-import { generateInvitationToken, hashToken } from 'src/common';
+import { ActionsLog, generateInvitationToken, hashToken } from 'src/common';
 import { Prisma } from 'src/generated/prisma/client';
 import { BrevoService } from '../infrastructure/services/brevo.service';
 import { ConfigService } from '@nestjs/config';
+import { UserDeactivateDto } from './dto/user-deactivate.dto';
 
 @Injectable()
 export class AdminService {
@@ -45,6 +46,43 @@ export class AdminService {
       return {
         invitationLink,
       };
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async userDeactivate(
+    affectedId: string,
+    userDeactivateDto: UserDeactivateDto,
+    userId: string,
+  ) {
+    try {
+      const { type, reason } = userDeactivateDto;
+
+      await this.prisma.$transaction(async (tx) => {
+        const affectedUserExist = await this.prisma.user.findUnique({
+          where: { id: affectedId },
+          select: { id: true, name: true, lastname: true, email: true },
+        });
+
+        if (!affectedUserExist) throw new Error('Usuario no encontrado');
+
+        await this.prisma.user.update({
+          data: { status: type },
+          where: { id: affectedId },
+        });
+
+        await this.prisma.log.create({
+          data: {
+            userId,
+            affectedUserId: affectedId,
+            action: ActionsLog.admin.deactivateUser,
+            description: reason,
+          },
+        });
+      });
+
+      return;
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
