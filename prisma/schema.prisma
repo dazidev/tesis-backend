@@ -20,22 +20,23 @@ enum UserStatus {
 }
 
 model User {
-  id              String            @default(uuid()) @id
-  name            String
-  lastname        String
-  email           String            @unique
-  password        String
-  roles           UserRole[]
-  status          UserStatus        @default(active)
-  lawyerId        String?
+  id                 String            @default(uuid()) @id
+  name               String
+  lastname           String
+  email              String            @unique
+  password           String
+  roles              UserRole[]
+  status             UserStatus        @default(active)
+  lawyerId           String?
 
-  createdAt       DateTime          @default(now()) @db.Timestamptz()
-  updatedAt       DateTime          @updatedAt @db.Timestamptz()
+  createdAt          DateTime          @default(now()) @db.Timestamptz()
+  updatedAt          DateTime          @updatedAt @db.Timestamptz()
 
-  userSessions    UserSession[]
-  userInvitations UserInvitation[]
+  userSessions       UserSession[]
+  userInvitations    UserInvitation[]
 
-  adminLogs       Log[]
+  logsAsUser         Log[]            @relation("LogUser")
+  logsAsAffectedUser Log[]            @relation("LogAffectedUser")
 
   @@index([email])
   @@index([roles])
@@ -82,12 +83,14 @@ model UserInvitation {
 }
 
 model Log {
-  id          String    @default(uuid()) @id
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  action      String
-  description String
-  createdAt   DateTime  @default(now()) @db.Timestamptz()
+  id             String    @default(uuid()) @id
+  userId         String?
+  user           User?    @relation("LogUser" , fields: [userId], references: [id], onDelete: SetNull)
+  affectedUserId String?
+  affectedUser   User?    @relation("LogAffectedUser", fields: [affectedUserId], references: [id], onDelete: SetNull)
+  action         String
+  description    String
+  createdAt      DateTime  @default(now()) @db.Timestamptz()
 
   @@index([userId])
   @@index([action])
