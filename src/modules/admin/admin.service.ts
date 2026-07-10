@@ -19,24 +19,39 @@ export class AdminService {
     private configService: ConfigService,
   ) {}
 
-  async sendUserInvitation(userInivitationDto: UserInivitationDto) {
+  async sendUserInvitation(
+    userInivitationDto: UserInivitationDto,
+    userId: string,
+  ) {
     try {
       const { toEmail, role, createdById } = userInivitationDto;
+
       const token = generateInvitationToken();
-      const hashedToken = hashToken(token);
 
-      const invitation = await this.prisma.userInvitation.create({
-        data: {
-          token: hashedToken,
-          toEmail,
-          role,
-          createdById,
-          expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), // 7 dias
-        },
+      await this.prisma.$transaction(async (tx) => {
+        const hashedToken = hashToken(token);
+
+        const invitation = await tx.userInvitation.create({
+          data: {
+            token: hashedToken,
+            toEmail,
+            role,
+            createdById,
+            expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), // 7 dias
+          },
+        });
+
+        if (!invitation)
+          throw new Error('Hubo un problema al guardar la invitación.');
+
+        await tx.log.create({
+          data: {
+            userId,
+            action: ActionsLog.common.invitationUser,
+            description: `Correo: ${toEmail} Rol: ${role}`,
+          },
+        });
       });
-
-      if (!invitation)
-        throw new Error('Hubo un problema al guardar la invitación.');
 
       const invitationLink = `/auth/register?token=${token}`;
 
@@ -60,19 +75,19 @@ export class AdminService {
       const { type, reason } = userDeactivateDto;
 
       await this.prisma.$transaction(async (tx) => {
-        const affectedUserExist = await this.prisma.user.findUnique({
+        const affectedUserExist = await tx.user.findUnique({
           where: { id: affectedId },
           select: { id: true, name: true, lastname: true, email: true },
         });
 
         if (!affectedUserExist) throw new Error('Usuario no encontrado');
 
-        await this.prisma.user.update({
+        await tx.user.update({
           data: { status: type },
           where: { id: affectedId },
         });
 
-        await this.prisma.log.create({
+        await tx.log.create({
           data: {
             userId,
             affectedUserId: affectedId,

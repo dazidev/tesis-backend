@@ -18,8 +18,11 @@ export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Post('user-invitation')
-  sendUserInvitation(@Body() userInivitationDto: UserInivitationDto) {
-    return this.adminService.sendUserInvitation(userInivitationDto);
+  sendUserInvitation(
+    @GetUser('id') userId: string,
+    @Body() userInivitationDto: UserInivitationDto,
+  ) {
+    return this.adminService.sendUserInvitation(userInivitationDto, userId);
   }
 
   @Patch('users/:id/deactivate')
