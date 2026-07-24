@@ -27,7 +27,9 @@ model User {
   password           String
   roles              UserRole[]
   status             UserStatus        @default(active)
-  lawyerId           String?
+
+  lawyers            User[]           @relation("ClientLawyers")
+  clients            User[]           @relation("ClientLawyers")
 
   createdAt          DateTime          @default(now()) @db.Timestamptz()
   updatedAt          DateTime          @updatedAt @db.Timestamptz()
@@ -37,8 +39,10 @@ model User {
 
   logsAsUser         Log[]            @relation("LogUser")
   logsAsAffectedUser Log[]            @relation("LogAffectedUser")
+  processPlaintiff   Process[]        @relation("Plaintiff")
+  processesManaged   Process[]        @relation("ManagedBy")
+  processesCreated   Process[]        @relation("CreatedBy")
 
-  @@index([email])
   @@index([roles])
   @@map("users")
 }
@@ -96,4 +100,100 @@ model Log {
   @@index([action])
   @@index([createdAt])
   @@map("server_log")
+}
+
+enum ProcessType {
+  testate
+  intestate
+  mixed
+}
+
+model Defendant {
+  id        String    @default(uuid()) @id
+  name      String
+  lastname  String
+  birthDate DateTime
+  deathDate DateTime
+  createdAt DateTime  @default(now()) @db.Timestamptz()
+  process   Process?
+
+  @@index([id])
+  @@map("defendants")
+}
+
+enum ProcessStatus {
+  created
+  opened
+  closed
+  deleted
+}
+
+model Process {
+  id             String          @default(uuid()) @id
+  courtNumber    String
+  caseFileNumber String
+  type           ProcessType
+  status         ProcessStatus
+  plaintiffs     User[]         @relation("Plaintiff")
+  defendantId    String          @unique
+  defendant      Defendant      @relation(fields: [defendantId], references: [id])
+  managedByID    String
+  managedBy      User           @relation("ManagedBy", fields: [managedByID], references: [id])
+
+  createdById    String
+  createdBy      User           @relation("CreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime        @default(now()) @db.Timestamptz()
+  updatedAt      DateTime        @updatedAt @db.Timestamptz()
+
+  stages         ProcessStage[]
+
+  @@index([courtNumber])
+  @@index([caseFileNumber])
+  @@index([type])
+  @@map("processes")
+}
+
+enum StageStatus {
+  created
+  opened
+  closed
+}
+
+model ProcessStage {
+  id                String             @default(uuid()) @id
+  name              String
+  description       String
+  status            StageStatus
+  processId         String
+  process           Process           @relation(fields: [processId], references: [id])
+
+  updatedAt         DateTime           @updatedAt @db.Timestamptz()
+  childrenSubstages ProcessSubstage[]
+
+  @@map("process_stages")
+}
+
+enum SubstageStatus {
+  opened
+  closed
+  deleted
+}
+
+model ProcessSubstage {
+  id                String             @default(uuid()) @id
+  name              String
+  description       String
+  status            SubstageStatus
+
+  stageId           String
+  stage             ProcessStage      @relation( fields: [stageId],references: [id])
+
+  parentSubstageId  String?
+  parentSubstage    ProcessSubstage?  @relation("SubstageHierarchy",fields: [parentSubstageId],references: [id])
+
+  childrenSubstages ProcessSubstage[] @relation("SubstageHierarchy")
+
+  @@index([stageId])
+  @@index([parentSubstageId])
+  @@map("process_substages")
 }
