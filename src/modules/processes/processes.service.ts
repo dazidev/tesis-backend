@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProcessDto } from './dto';
-import { ProcessType } from 'src/generated/prisma/enums';
 import { Prisma } from 'src/generated/prisma/client';
 
 @Injectable()
@@ -22,8 +21,8 @@ export class ProcessesService {
         data: {
           name,
           lastname,
-          birthDate,
-          deathDate,
+          birthDate: new Date(birthDate),
+          deathDate: new Date(deathDate),
         },
         select: {
           id: true,

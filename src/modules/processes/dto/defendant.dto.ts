@@ -1,4 +1,4 @@
-import { IsDate, IsString } from 'class-validator';
+import { IsDateString, IsString } from 'class-validator';
 
 export class DefendantDto {
   @IsString()
@@ -7,9 +7,9 @@ export class DefendantDto {
   @IsString()
   readonly lastname!: string;
 
-  @IsDate()
-  readonly birthDate!: Date;
+  @IsDateString()
+  readonly birthDate!: string;
 
-  @IsDate()
-  readonly deathDate!: Date;
+  @IsDateString()
+  readonly deathDate!: string;
 }
