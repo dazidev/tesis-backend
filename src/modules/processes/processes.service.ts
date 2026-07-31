@@ -4,8 +4,9 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ProcessDto } from './dto';
+import { ProcessDeactivateDto, ProcessDto } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
+import { ActionsLog } from 'src/common';
 
 @Injectable()
 export class ProcessesService {
@@ -42,6 +43,59 @@ export class ProcessesService {
       });
 
       if (!process) return process;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async getProcess() {
+    try {
+      const processes = await this.prisma.process.findMany();
+
+      return processes;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async deactivateProcess(
+    id: string,
+    processDeactivateDto: ProcessDeactivateDto,
+    userId: string,
+  ) {
+    try {
+      const { reason } = processDeactivateDto;
+
+      const process = await this.prisma.process.findUnique({
+        select: { status: true },
+        where: { id },
+      });
+
+      if (!process) throw new Error('The process was not found');
+
+      await this.prisma.$transaction(async (tx) => {
+        if (process.status === 'created') {
+          await tx.process.delete({ where: { id } });
+        } else {
+          await tx.process.update({
+            data: { status: 'deleted' },
+            where: { id },
+          });
+        }
+
+        await tx.log.create({
+          data: {
+            userId,
+            action:
+              process.status === 'created'
+                ? ActionsLog.common.deleteProcess
+                : ActionsLog.common.deactivateProcess,
+            description: reason,
+          },
+        });
+      });
+
+      return;
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
