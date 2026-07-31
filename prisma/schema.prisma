@@ -136,7 +136,7 @@ model Process {
   status         ProcessStatus
   plaintiffs     User[]         @relation("Plaintiff")
   defendantId    String          @unique
-  defendant      Defendant      @relation(fields: [defendantId], references: [id])
+  defendant      Defendant      @relation(fields: [defendantId], references: [id], onDelete: Cascade)
   managedByID    String
   managedBy      User           @relation("ManagedBy", fields: [managedByID], references: [id])
 
