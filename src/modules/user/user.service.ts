@@ -5,7 +5,8 @@ import {
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from 'src/generated/prisma/client';
+import { Prisma, UserRole } from 'src/generated/prisma/client';
+import { FindUserQuerysDto } from './dto/querys/find-user-querys.dto';
 
 @Injectable()
 export class UserService {
@@ -18,6 +19,27 @@ export class UserService {
   async findAll() {
     try {
       const users = await this.prisma.user.findMany();
+
+      if (!users) throw new Error('Users not found.');
+
+      return users;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async findUserByRole(role: UserRole) {
+    try {
+      const users = await this.prisma.user.findMany({
+        select: {
+          id: true,
+          name: true,
+          lastname: true,
+          email: true,
+          roles: true,
+        },
+        where: { roles: { has: role } },
+      });
 
       if (!users) throw new Error('Users not found.');
 

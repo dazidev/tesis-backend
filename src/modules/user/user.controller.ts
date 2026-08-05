@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { ValidRoles } from '../auth/interfaces';
+import { FindUserQuerysDto } from './dto/querys/find-user-querys.dto';
 
 @Controller('user')
 export class UserController {
@@ -15,7 +16,9 @@ export class UserController {
 
   @Auth(ValidRoles.admin)
   @Get()
-  findAll() {
+  findAll(@Query() findUserQuerysDto: FindUserQuerysDto) {
+    const { role } = findUserQuerysDto;
+    if (role) return this.userService.findUserByRole(role);
     return this.userService.findAll();
   }
 }
