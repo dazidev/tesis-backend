@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsString, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 import { DefendantDto } from './defendant.dto';
 import { ProcessType } from '../interfaces';
 
@@ -14,6 +20,7 @@ export class ProcessDto {
   @IsEnum(ProcessType)
   readonly type!: ProcessType;
 
+  @IsOptional()
   @IsUUID()
   readonly managedByID!: string;
 

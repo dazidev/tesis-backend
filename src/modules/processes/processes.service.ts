@@ -37,7 +37,7 @@ export class ProcessesService {
           type,
           defendantId: defendantId.id,
           status: 'created',
-          managedByID,
+          managedByID: managedByID ?? userId,
           createdById: userId,
         },
       });
