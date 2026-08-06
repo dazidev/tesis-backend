@@ -163,6 +163,7 @@ model ProcessStage {
   name              String
   description       String
   status            StageStatus
+  order             Int
   processId         String
   process           Process           @relation(fields: [processId], references: [id])
 
@@ -183,6 +184,7 @@ model ProcessSubstage {
   name              String
   description       String
   status            SubstageStatus
+  order             Int
 
   stageId           String
   stage             ProcessStage      @relation( fields: [stageId],references: [id])
