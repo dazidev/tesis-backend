@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProcessDeactivateDto, ProcessDto } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
 import { ActionsLog } from 'src/common';
+import * as process from 'node:process';
 
 @Injectable()
 export class ProcessesService {
@@ -18,28 +19,42 @@ export class ProcessesService {
         processDto;
       const { name, lastname, birthDate, deathDate } = defendant;
 
-      const defendantId = await this.prisma.defendant.create({
-        data: {
-          name,
-          lastname,
-          birthDate: new Date(birthDate),
-          deathDate: new Date(deathDate),
-        },
-        select: {
-          id: true,
-        },
-      });
+      let process;
 
-      const process = await this.prisma.process.create({
-        data: {
-          courtNumber,
-          caseFileNumber,
-          type,
-          defendantId: defendantId.id,
-          status: 'created',
-          managedByID: managedByID ?? userId,
-          createdById: userId,
-        },
+      await this.prisma.$transaction(async (tx) => {
+        const defendantId = await tx.defendant.create({
+          data: {
+            name,
+            lastname,
+            birthDate: new Date(birthDate),
+            deathDate: new Date(deathDate),
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        const processResponse = await tx.process.create({
+          data: {
+            courtNumber,
+            caseFileNumber,
+            type,
+            defendantId: defendantId.id,
+            status: 'created',
+            managedByID: managedByID ?? userId,
+            createdById: userId,
+          },
+        });
+
+        await tx.log.create({
+          data: {
+            userId,
+            action: ActionsLog.common.createProcess,
+            description: processResponse.id,
+          },
+        });
+
+        process = processResponse;
       });
 
       if (!process) return process;
