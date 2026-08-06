@@ -7,10 +7,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProcessDeactivateDto, ProcessDto } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
 import { LogActions, LogEntities } from 'src/common';
+import { LogsService } from '../logs/logs.service';
+import { CreateLog } from '../logs/interfaces';
 
 @Injectable()
 export class ProcessesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private logsService: LogsService,
+  ) {}
 
   async createProcess(userId: string, processDto: ProcessDto) {
     try {
@@ -45,15 +50,15 @@ export class ProcessesService {
           },
         });
 
-        await tx.log.create({
-          data: {
-            userId,
-            action: LogActions.common.createProcess,
-            entity: LogEntities.process,
-            affected: processResponse.id,
-            description: '',
-          },
-        });
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.common.createProcess,
+          entity: LogEntities.process,
+          affected: processResponse.id,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
 
         process = processResponse;
       });
@@ -99,17 +104,17 @@ export class ProcessesService {
           });
         }
 
-        await tx.log.create({
-          data: {
-            userId,
-            action:
-              process.status === 'created'
-                ? LogActions.common.deleteProcess
-                : LogActions.common.deactivateProcess,
-            entity: LogEntities.process,
-            description: reason,
-          },
-        });
+        const dataLog: CreateLog = {
+          userId,
+          action:
+            process.status === 'created'
+              ? LogActions.common.deleteProcess
+              : LogActions.common.deactivateProcess,
+          entity: LogEntities.process,
+          description: reason,
+        };
+
+        await this.logsService.create(dataLog, tx);
       });
 
       return;
@@ -181,15 +186,15 @@ export class ProcessesService {
           where: { id: processId },
         });
 
-        await tx.log.create({
-          data: {
-            userId,
-            affected: processId,
-            entity: LogEntities.process,
-            action: LogActions.common.initProcess,
-            description: '',
-          },
-        });
+        const dataLog: CreateLog = {
+          userId,
+          affected: processId,
+          entity: LogEntities.process,
+          action: LogActions.common.initProcess,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
       });
 
       return;

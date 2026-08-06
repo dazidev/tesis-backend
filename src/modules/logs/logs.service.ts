@@ -7,10 +7,7 @@ import { Prisma } from 'src/generated/prisma/client';
 export class LogsService {
   constructor(private prisma: PrismaService) {}
 
-  async createLog(
-    data: CreateLog,
-    tx: Prisma.TransactionClient | PrismaService,
-  ) {
+  async create(data: CreateLog, tx: Prisma.TransactionClient | PrismaService) {
     return tx.log.create({
       data,
     });

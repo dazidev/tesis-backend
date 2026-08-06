@@ -15,6 +15,8 @@ import { Prisma } from 'src/generated/prisma/client';
 import { BrevoService } from '../infrastructure/services/brevo.service';
 import { ConfigService } from '@nestjs/config';
 import { UserDeactivateDto } from './dto/user-deactivate.dto';
+import { LogsService } from '../logs/logs.service';
+import { CreateLog } from '../logs/interfaces';
 
 @Injectable()
 export class AdminService {
@@ -22,6 +24,7 @@ export class AdminService {
     private prisma: PrismaService,
     private readonly brevoService: BrevoService,
     private configService: ConfigService,
+    private logsService: LogsService,
   ) {}
 
   async sendUserInvitation(
@@ -49,13 +52,14 @@ export class AdminService {
         if (!invitation)
           throw new Error('Hubo un problema al guardar la invitación.');
 
-        await tx.log.create({
-          data: {
-            userId,
-            action: LogActions.common.invitationUser,
-            description: `Correo: ${toEmail} Rol: ${role}`,
-          },
-        });
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.common.invitationUser,
+          affected: toEmail,
+          description: `Rol: ${role}`,
+        };
+
+        await this.logsService.create(dataLog, tx);
       });
 
       const invitationLink = `/auth/register?token=${token}`;
@@ -92,15 +96,15 @@ export class AdminService {
           where: { id: affectedId },
         });
 
-        await tx.log.create({
-          data: {
-            userId,
-            affected: affectedId,
-            entity: LogEntities.user,
-            action: LogActions.admin.deactivateUser,
-            description: reason,
-          },
-        });
+        const dataLog: CreateLog = {
+          userId,
+          affected: affectedId,
+          entity: LogEntities.user,
+          action: LogActions.admin.deactivateUser,
+          description: reason,
+        };
+
+        await this.logsService.create(dataLog, tx);
       });
 
       return;
