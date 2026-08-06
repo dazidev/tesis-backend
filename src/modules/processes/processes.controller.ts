@@ -43,4 +43,13 @@ export class ProcessesController {
       UserId,
     );
   }
+
+  @Post(':id/init')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  initProcess(
+    @GetUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) processId: string,
+  ) {
+    return this.processesService.initProcess(processId, userId);
+  }
 }

@@ -7,7 +7,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProcessDeactivateDto, ProcessDto } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
 import { LogActions, LogEntities } from 'src/common';
-import * as process from 'node:process';
 
 @Injectable()
 export class ProcessesService {
@@ -115,6 +114,87 @@ export class ProcessesService {
 
       return;
     } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async initProcess(processId: string, userId: string) {
+    try {
+      const processStatus = await this.prisma.process.findUnique({
+        select: { status: true },
+        where: { id: processId },
+      });
+
+      if (!processStatus) throw new Error('Process not found.');
+
+      if (processStatus.status !== 'created')
+        throw new Error('Process already initialized.');
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.processStage.createMany({
+          data: [
+            {
+              name: 'Denuncia del juicio sucesorio',
+              description:
+                'Etapa inicial en la que se presenta la solicitud para iniciar el procedimiento sucesorio ante la autoridad competente.',
+              status: 'opened',
+              order: 1,
+              processId,
+            },
+            {
+              name: 'Nombramiento de herederos y albacea',
+              description:
+                'Se determina quiénes son los herederos con derecho a la sucesión y se designa al albacea encargado de administrar la herencia.',
+              status: 'created',
+              order: 2,
+              processId,
+            },
+            {
+              name: 'Inventario y avalúo',
+              description:
+                'Se identifican, registran y valoran los bienes, derechos y obligaciones que integran el patrimonio del autor de la sucesión.',
+              status: 'created',
+              order: 3,
+              processId,
+            },
+            {
+              name: 'Partición y adjudicación',
+              description:
+                'Se distribuyen los bienes de la herencia entre los herederos conforme a la ley o al testamento.',
+              status: 'created',
+              order: 4,
+              processId,
+            },
+            {
+              name: 'Sentencia',
+              description:
+                'Se emite la resolución judicial que concluye el procedimiento sucesorio y formaliza la adjudicación de los bienes.',
+              status: 'created',
+              order: 5,
+              processId,
+            },
+          ],
+        });
+
+        await tx.process.update({
+          data: { status: 'opened' },
+          where: { id: processId },
+        });
+
+        await tx.log.create({
+          data: {
+            userId,
+            affected: processId,
+            entity: LogEntities.process,
+            action: LogActions.common.initProcess,
+            description: '',
+          },
+        });
+      });
+
+      return;
+    } catch (error: unknown) {
+      console.log(error);
       this.handleDBErrors(error);
     }
   }

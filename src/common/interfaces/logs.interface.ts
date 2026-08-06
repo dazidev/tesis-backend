@@ -7,6 +7,7 @@ export const LogActions = {
     createProcess: 'CREATE_PROCESS',
     deactivateProcess: 'DEACTIVATE_PROCESS',
     deleteProcess: 'DELETE_PROCESS',
+    initProcess: 'INIT_PROCESS',
   },
 };
 
