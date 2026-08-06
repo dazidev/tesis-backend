@@ -9,7 +9,6 @@ src/generated/prisma/
 postgres
 
 # Logs
-logs
 *.log
 npm-debug.log*
 pnpm-debug.log*
