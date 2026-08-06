@@ -20,28 +20,27 @@ enum UserStatus {
 }
 
 model User {
-  id                 String            @default(uuid()) @id
-  name               String
-  lastname           String
-  email              String            @unique
-  password           String
-  roles              UserRole[]
-  status             UserStatus        @default(active)
+  id               String            @default(uuid()) @id
+  name             String
+  lastname         String
+  email            String            @unique
+  password         String
+  roles            UserRole[]
+  status           UserStatus        @default(active)
 
-  lawyers            User[]           @relation("ClientLawyers")
-  clients            User[]           @relation("ClientLawyers")
+  lawyers          User[]           @relation("ClientLawyers")
+  clients          User[]           @relation("ClientLawyers")
 
-  createdAt          DateTime          @default(now()) @db.Timestamptz()
-  updatedAt          DateTime          @updatedAt @db.Timestamptz()
+  createdAt        DateTime          @default(now()) @db.Timestamptz()
+  updatedAt        DateTime          @updatedAt @db.Timestamptz()
 
-  userSessions       UserSession[]
-  userInvitations    UserInvitation[]
+  userSessions     UserSession[]
+  userInvitations  UserInvitation[]
 
-  logsAsUser         Log[]            @relation("LogUser")
-  logsAsAffectedUser Log[]            @relation("LogAffectedUser")
-  processPlaintiff   Process[]        @relation("Plaintiff")
-  processesManaged   Process[]        @relation("ManagedBy")
-  processesCreated   Process[]        @relation("CreatedBy")
+  logsAsUser       Log[]            @relation("LogUser")
+  processPlaintiff Process[]        @relation("Plaintiff")
+  processesManaged Process[]        @relation("ManagedBy")
+  processesCreated Process[]        @relation("CreatedBy")
 
   @@index([roles])
   @@map("users")
@@ -87,14 +86,14 @@ model UserInvitation {
 }
 
 model Log {
-  id             String    @default(uuid()) @id
-  userId         String?
-  user           User?    @relation("LogUser" , fields: [userId], references: [id], onDelete: SetNull)
-  affectedUserId String?
-  affectedUser   User?    @relation("LogAffectedUser", fields: [affectedUserId], references: [id], onDelete: SetNull)
-  action         String
-  description    String
-  createdAt      DateTime  @default(now()) @db.Timestamptz()
+  id          String    @default(uuid()) @id
+  userId      String?
+  user        User?    @relation("LogUser" , fields: [userId], references: [id], onDelete: SetNull)
+  affected    String?
+  entity      String?
+  action      String
+  description String
+  createdAt   DateTime  @default(now()) @db.Timestamptz()
 
   @@index([userId])
   @@index([action])

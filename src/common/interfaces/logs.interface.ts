@@ -1,4 +1,4 @@
-export const ActionsLog = {
+export const LogActions = {
   admin: {
     deactivateUser: 'DEACTIVATE_USER',
   },
@@ -8,4 +8,9 @@ export const ActionsLog = {
     deactivateProcess: 'DEACTIVATE_PROCESS',
     deleteProcess: 'DELETE_PROCESS',
   },
+};
+
+export const LogEntities = {
+  user: 'USER',
+  process: 'PROCESS',
 };

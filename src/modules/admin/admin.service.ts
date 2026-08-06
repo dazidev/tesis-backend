@@ -5,7 +5,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserInivitationDto } from './dto/user-invitation.dto';
-import { ActionsLog, generateInvitationToken, hashToken } from 'src/common';
+import {
+  generateInvitationToken,
+  hashToken,
+  LogActions,
+  LogEntities,
+} from 'src/common';
 import { Prisma } from 'src/generated/prisma/client';
 import { BrevoService } from '../infrastructure/services/brevo.service';
 import { ConfigService } from '@nestjs/config';
@@ -47,7 +52,7 @@ export class AdminService {
         await tx.log.create({
           data: {
             userId,
-            action: ActionsLog.common.invitationUser,
+            action: LogActions.common.invitationUser,
             description: `Correo: ${toEmail} Rol: ${role}`,
           },
         });
@@ -90,8 +95,9 @@ export class AdminService {
         await tx.log.create({
           data: {
             userId,
-            affectedUserId: affectedId,
-            action: ActionsLog.admin.deactivateUser,
+            affected: affectedId,
+            entity: LogEntities.user,
+            action: LogActions.admin.deactivateUser,
             description: reason,
           },
         });

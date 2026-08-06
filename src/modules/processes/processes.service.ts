@@ -6,7 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ProcessDeactivateDto, ProcessDto } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
-import { ActionsLog } from 'src/common';
+import { LogActions, LogEntities } from 'src/common';
 import * as process from 'node:process';
 
 @Injectable()
@@ -49,8 +49,10 @@ export class ProcessesService {
         await tx.log.create({
           data: {
             userId,
-            action: ActionsLog.common.createProcess,
-            description: processResponse.id,
+            action: LogActions.common.createProcess,
+            entity: LogEntities.process,
+            affected: processResponse.id,
+            description: '',
           },
         });
 
@@ -103,8 +105,9 @@ export class ProcessesService {
             userId,
             action:
               process.status === 'created'
-                ? ActionsLog.common.deleteProcess
-                : ActionsLog.common.deactivateProcess,
+                ? LogActions.common.deleteProcess
+                : LogActions.common.deactivateProcess,
+            entity: LogEntities.process,
             description: reason,
           },
         });
