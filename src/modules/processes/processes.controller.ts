@@ -27,7 +27,13 @@ export class ProcessesController {
   @Get('')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   getProcess() {
-    return this.processesService.getProcess();
+    return this.processesService.getProcesses();
+  }
+
+  @Get(':id')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  getProcessById(@Param('id', ParseUUIDPipe) processId: string) {
+    return this.processesService.getProcessById(processId);
   }
 
   @Patch(':id/deactivate')

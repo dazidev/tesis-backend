@@ -69,11 +69,33 @@ export class ProcessesService {
     }
   }
 
-  async getProcess() {
+  async getProcesses() {
     try {
       const processes = await this.prisma.process.findMany();
 
       return processes;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async getProcessById(processId: string) {
+    try {
+      const process = await this.prisma.process.findUnique({
+        select: {
+          id: true,
+          caseFileNumber: true,
+          courtNumber: true,
+          type: true,
+          status: true,
+          defendant: true,
+          defendantId: true,
+        },
+
+        where: { id: processId },
+      });
+
+      return process;
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
