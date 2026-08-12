@@ -164,6 +164,7 @@ model ProcessStage {
   description       String
   status            StageStatus
   order             Int
+  openSubstages     Int                @default(0)
   processId         String
   process           Process           @relation(fields: [processId], references: [id])
 
