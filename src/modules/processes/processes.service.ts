@@ -4,7 +4,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ProcessDeactivateDto, ProcessDto } from './dto';
+import { CreateSubstageDto, ProcessDeactivateDto, ProcessDto } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
 import { LogActions, LogEntities } from 'src/common';
 import { LogsService } from '../logs/logs.service';
@@ -222,6 +222,40 @@ export class ProcessesService {
       return;
     } catch (error: unknown) {
       console.log(error);
+      this.handleDBErrors(error);
+    }
+  }
+
+  async createSubstage(stageId: string, createSubstageDto: CreateSubstageDto) {
+    const { name, description, parentSubstageId } = createSubstageDto;
+    try {
+      const stage = await this.prisma.processStage.findUnique({
+        where: { id: stageId },
+      });
+
+      if (!stage) throw new Error('The stage was not found');
+
+      const count = await this.prisma.processSubstage.count({
+        where: {
+          stageId,
+        },
+      });
+
+      await this.prisma.$transaction(async (tx) => {
+        tx.processSubstage.create({
+          data: {
+            name,
+            description,
+            stageId,
+            status: 'opened',
+            order: count + 1,
+            parentSubstageId: parentSubstageId ?? null,
+          },
+        });
+      });
+
+      return;
+    } catch (error: unknown) {
       this.handleDBErrors(error);
     }
   }
