@@ -11,7 +11,7 @@ import {
   ProcessDto,
 } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
-import { LogActions, LogEntities } from 'src/common';
+import { buildTree, LogActions, LogEntities } from 'src/common';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
 
@@ -86,7 +86,7 @@ export class ProcessesService {
 
   async getProcessById(processId: string) {
     try {
-      const process = await this.prisma.process.findUnique({
+      const stageProcess = await this.prisma.process.findUnique({
         select: {
           id: true,
           caseFileNumber: true,
@@ -95,12 +95,48 @@ export class ProcessesService {
           status: true,
           defendant: true,
           defendantId: true,
+          stages: {
+            select: {
+              id: true,
+              name: true,
+              order: true,
+              status: true,
+            },
+            orderBy: { order: 'asc' },
+          },
         },
-
         where: { id: processId },
       });
 
-      return process;
+      if (!stageProcess) throw new Error('Process not found.');
+
+      const stagesIds = stageProcess.stages.map((stage) => stage.id);
+
+      const substages = await this.prisma.processSubstage.findMany({
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          status: true,
+          order: true,
+          stageId: true,
+          parentSubstageId: true,
+        },
+        where: { stageId: { in: stagesIds } },
+        orderBy: { order: 'asc' },
+      });
+
+      const substagesByStage = buildTree(substages);
+
+      const stagesWithSubstages = stageProcess.stages.map((stage) => ({
+        ...stage,
+        childrenSubstages: substagesByStage[stage.id] ?? [],
+      }));
+
+      return {
+        ...stageProcess,
+        stages: stagesWithSubstages,
+      };
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
