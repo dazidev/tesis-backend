@@ -4,7 +4,12 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSubstageDto, ProcessDeactivateDto, ProcessDto } from './dto';
+import {
+  CreateStageDto,
+  CreateSubstageDto,
+  ProcessDeactivateDto,
+  ProcessDto,
+} from './dto';
 import { Prisma } from 'src/generated/prisma/client';
 import { LogActions, LogEntities } from 'src/common';
 import { LogsService } from '../logs/logs.service';
@@ -255,6 +260,42 @@ export class ProcessesService {
       });
 
       return;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async createStage(processId: string, createStageDto: CreateStageDto) {
+    const { name, description, order } = createStageDto;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const processExists = await tx.process.findUnique({
+          select: { id: true, stages: { orderBy: { order: 'asc' } } },
+          where: { id: processId },
+        });
+        if (!processExists) throw new Error('Process not found.');
+
+        for (const stage of processExists.stages) {
+          if (stage.order >= order) {
+            const newOrder = stage.order + 1;
+            await tx.processStage.update({
+              data: { order: newOrder },
+              where: { id: stage.id },
+            });
+          }
+        }
+
+        const newStage = await tx.processStage.create({
+          data: {
+            name,
+            description,
+            order,
+            status: 'opened',
+            processId,
+          },
+        });
+        return newStage;
+      });
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }

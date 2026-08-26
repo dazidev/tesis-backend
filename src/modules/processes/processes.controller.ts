@@ -11,7 +11,12 @@ import { ProcessesService } from './processes.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { ValidRoles } from '../auth/interfaces';
 import { GetUser } from '../auth/decorators';
-import { CreateSubstageDto, ProcessDeactivateDto, ProcessDto } from './dto';
+import {
+  CreateStageDto,
+  CreateSubstageDto,
+  ProcessDeactivateDto,
+  ProcessDto,
+} from './dto';
 
 @Auth()
 @Controller('processes')
@@ -62,6 +67,17 @@ export class ProcessesController {
     @Param('id', ParseUUIDPipe) processId: string,
   ) {
     return this.processesService.initProcess(processId, userId);
+  }
+
+  //* CREATE STAGE
+  @Post(':processId/stage')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  createStage(
+    @GetUser('id') userId: string,
+    @Param('processId', ParseUUIDPipe) processId: string,
+    @Body() createStageDto: CreateStageDto,
+  ) {
+    return this.processesService.createStage(processId, createStageDto);
   }
 
   //* CREATE SUBSTAGE
