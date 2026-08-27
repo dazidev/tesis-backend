@@ -102,6 +102,7 @@ export class ProcessesService {
               description: true,
               order: true,
               status: true,
+              main: true,
             },
             orderBy: { order: 'asc' },
           },
@@ -211,6 +212,7 @@ export class ProcessesService {
               status: 'opened',
               order: 1,
               processId,
+              main: true,
             },
             {
               name: 'Nombramiento de herederos y albacea',
@@ -219,6 +221,7 @@ export class ProcessesService {
               status: 'created',
               order: 2,
               processId,
+              main: true,
             },
             {
               name: 'Inventario y avalúo',
@@ -227,6 +230,7 @@ export class ProcessesService {
               status: 'created',
               order: 3,
               processId,
+              main: true,
             },
             {
               name: 'Partición y adjudicación',
@@ -235,6 +239,7 @@ export class ProcessesService {
               status: 'created',
               order: 4,
               processId,
+              main: true,
             },
             {
               name: 'Sentencia',
@@ -243,6 +248,7 @@ export class ProcessesService {
               status: 'created',
               order: 5,
               processId,
+              main: true,
             },
           ],
         });
