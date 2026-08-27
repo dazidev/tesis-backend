@@ -16,6 +16,8 @@ export type SubstageNode = {
   description: string;
   status: SubstageStatus;
   order: number;
+  stageId: string;
+  parentSubstageId: string | null;
   childrenSubstages: SubstageNode[];
 };
 
@@ -32,6 +34,8 @@ export function buildTree(
       description: item.description,
       status: item.status,
       order: item.order,
+      stageId: item.stageId,
+      parentSubstageId: item.parentSubstageId,
       childrenSubstages: [],
     });
   }

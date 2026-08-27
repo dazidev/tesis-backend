@@ -99,6 +99,7 @@ export class ProcessesService {
             select: {
               id: true,
               name: true,
+              description: true,
               order: true,
               status: true,
             },
@@ -133,10 +134,12 @@ export class ProcessesService {
         childrenSubstages: substagesByStage[stage.id] ?? [],
       }));
 
-      return {
+      const process = {
         ...stageProcess,
         stages: stagesWithSubstages,
       };
+
+      return process;
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
@@ -282,17 +285,15 @@ export class ProcessesService {
         },
       });
 
-      await this.prisma.$transaction(async (tx) => {
-        tx.processSubstage.create({
-          data: {
-            name,
-            description,
-            stageId,
-            status: 'opened',
-            order: count + 1,
-            parentSubstageId: parentSubstageId ?? null,
-          },
-        });
+      await this.prisma.processSubstage.create({
+        data: {
+          name,
+          description,
+          stageId,
+          status: 'opened',
+          order: count + 1,
+          parentSubstageId: parentSubstageId ?? null,
+        },
       });
 
       return;
