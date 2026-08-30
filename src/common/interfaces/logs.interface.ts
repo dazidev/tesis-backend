@@ -12,9 +12,11 @@ export const LogActions = {
     init: 'INIT_PROCESS',
     stage: {
       create: 'CREATE_STAGE',
+      delete: 'DELETE_STAGE',
     },
     substage: {
       create: 'CREATE_SUBSTAGE',
+      delete: 'DELETE_SUBSTAGE',
     },
   },
 };

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -14,6 +15,8 @@ import { GetUser } from '../auth/decorators';
 import {
   CreateStageDto,
   CreateSubstageDto,
+  DeactivateStageDto,
+  DeactivateSubstageDto,
   ProcessDeactivateDto,
   ProcessDto,
 } from './dto';
@@ -80,6 +83,21 @@ export class ProcessesController {
     return this.processesService.createStage(processId, createStageDto, userId);
   }
 
+  //* DELETE/DEACTIVE STAGE
+  @Patch('stage/:stageId/deactive')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  deactivateStage(
+    @GetUser('id') userId: string,
+    @Body() deactivateStageDto: DeactivateStageDto,
+    @Param('stageId', ParseUUIDPipe) stageId: string,
+  ) {
+    return this.processesService.deactivateStage(
+      stageId,
+      deactivateStageDto,
+      userId,
+    );
+  }
+
   //* CREATE SUBSTAGE
   @Post('stage/:stageId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
@@ -91,6 +109,21 @@ export class ProcessesController {
     return this.processesService.createSubstage(
       stageId,
       createSubstageDto,
+      userId,
+    );
+  }
+
+  //* DELETE/DEACTIVE SUBSTAGE
+  @Patch('substage/:substageId/deactive')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  deactivateSubstage(
+    @GetUser('id') userId: string,
+    @Body() deactivateSubstageDto: DeactivateSubstageDto,
+    @Param('substageId', ParseUUIDPipe) substageId: string,
+  ) {
+    return this.processesService.deactivateSubstage(
+      substageId,
+      deactivateSubstageDto,
       userId,
     );
   }

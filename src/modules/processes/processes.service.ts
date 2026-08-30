@@ -14,6 +14,7 @@ import { Prisma } from 'src/generated/prisma/client';
 import { buildTree, LogActions, LogEntities } from 'src/common';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
+import { DeactivateSubstageDto } from './dto/deactivate-substage.dto';
 
 @Injectable()
 export class ProcessesService {
@@ -107,7 +108,12 @@ export class ProcessesService {
             orderBy: { order: 'asc' },
           },
         },
-        where: { id: processId },
+        where: {
+          id: processId,
+          status: {
+            not: 'deleted',
+          },
+        },
       });
 
       if (!stageProcess) throw new Error('Process not found.');
@@ -124,7 +130,12 @@ export class ProcessesService {
           stageId: true,
           parentSubstageId: true,
         },
-        where: { stageId: { in: stagesIds } },
+        where: {
+          stageId: { in: stagesIds },
+          status: {
+            not: 'deleted',
+          },
+        },
         orderBy: { order: 'asc' },
       });
 
@@ -324,6 +335,43 @@ export class ProcessesService {
     }
   }
 
+  async deactivateSubstage(
+    substageId: string,
+    deactivateSubstageDto: DeactivateSubstageDto,
+    userId: string,
+  ) {
+    try {
+      const { reason } = deactivateSubstageDto;
+
+      return await this.prisma.$transaction(async (tx) => {
+        const subStage = await tx.processSubstage.findUnique({
+          where: { id: substageId },
+        });
+
+        if (!subStage) throw new Error('The substage was not found!');
+
+        await tx.processSubstage.update({
+          data: { status: 'deleted' },
+          where: { id: substageId },
+        });
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.process.substage.delete,
+          entity: LogEntities.substage,
+          affected: subStage.id,
+          description: reason,
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return;
+      });
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
   async createStage(
     processId: string,
     createStageDto: CreateStageDto,
@@ -369,6 +417,45 @@ export class ProcessesService {
         await this.logsService.create(dataLog, tx);
 
         return newStage;
+      });
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async deactivateStage(
+    stageId: string,
+    deactivateSubstageDto: DeactivateSubstageDto,
+    userId: string,
+  ) {
+    try {
+      const { reason } = deactivateSubstageDto;
+
+      return await this.prisma.$transaction(async (tx) => {
+        const stage = await tx.processStage.findUnique({
+          where: { id: stageId },
+        });
+
+        if (!stage) throw new Error('The stage was not found!');
+        if (stage.main)
+          throw new Error('The stage is principal, it can not be delete.');
+
+        await tx.processStage.update({
+          data: { status: 'deleted' },
+          where: { id: stageId },
+        });
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.process.stage.delete,
+          entity: LogEntities.stage,
+          affected: stage.id,
+          description: reason,
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return;
       });
     } catch (error: unknown) {
       this.handleDBErrors(error);
