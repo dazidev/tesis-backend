@@ -104,6 +104,12 @@ export class ProcessesService {
               order: true,
               status: true,
               main: true,
+              processId: true,
+            },
+            where: {
+              status: {
+                not: 'deleted',
+              },
             },
             orderBy: { order: 'asc' },
           },
