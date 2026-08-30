@@ -84,7 +84,7 @@ export class ProcessesController {
   }
 
   //* DELETE/DEACTIVE STAGE
-  @Patch('stage/:stageId/deactive')
+  @Patch('stage/:stageId/deactivate')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   deactivateStage(
     @GetUser('id') userId: string,
@@ -114,7 +114,7 @@ export class ProcessesController {
   }
 
   //* DELETE/DEACTIVE SUBSTAGE
-  @Patch('substage/:substageId/deactive')
+  @Patch('substage/:substageId/deactivate')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   deactivateSubstage(
     @GetUser('id') userId: string,
