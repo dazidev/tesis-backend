@@ -4,14 +4,24 @@ export const LogActions = {
   },
   common: {
     invitationUser: 'INVITATION_USER',
-    createProcess: 'CREATE_PROCESS',
-    deactivateProcess: 'DEACTIVATE_PROCESS',
-    deleteProcess: 'DELETE_PROCESS',
-    initProcess: 'INIT_PROCESS',
+  },
+  process: {
+    create: 'CREATE_PROCESS',
+    deactivate: 'DEACTIVATE_PROCESS',
+    delete: 'DELETE_PROCESS',
+    init: 'INIT_PROCESS',
+    stage: {
+      create: 'CREATE_STAGE',
+    },
+    substage: {
+      create: 'CREATE_SUBSTAGE',
+    },
   },
 };
 
 export const LogEntities = {
   user: 'USER',
   process: 'PROCESS',
+  stage: 'STAGE',
+  substage: 'SUBSTAGE',
 };

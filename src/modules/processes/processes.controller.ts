@@ -77,7 +77,7 @@ export class ProcessesController {
     @Param('processId', ParseUUIDPipe) processId: string,
     @Body() createStageDto: CreateStageDto,
   ) {
-    return this.processesService.createStage(processId, createStageDto);
+    return this.processesService.createStage(processId, createStageDto, userId);
   }
 
   //* CREATE SUBSTAGE
@@ -88,6 +88,10 @@ export class ProcessesController {
     @Param('stageId', ParseUUIDPipe) stageId: string,
     @Body() createSubstageDto: CreateSubstageDto,
   ) {
-    return this.processesService.createSubstage(stageId, createSubstageDto);
+    return this.processesService.createSubstage(
+      stageId,
+      createSubstageDto,
+      userId,
+    );
   }
 }

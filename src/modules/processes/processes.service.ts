@@ -57,7 +57,7 @@ export class ProcessesService {
 
         const dataLog: CreateLog = {
           userId,
-          action: LogActions.common.createProcess,
+          action: LogActions.process.create,
           entity: LogEntities.process,
           affected: processResponse.id,
           description: '',
@@ -175,8 +175,8 @@ export class ProcessesService {
           userId,
           action:
             process.status === 'created'
-              ? LogActions.common.deleteProcess
-              : LogActions.common.deactivateProcess,
+              ? LogActions.process.delete
+              : LogActions.process.deactivate,
           entity: LogEntities.process,
           description: reason,
         };
@@ -262,7 +262,7 @@ export class ProcessesService {
           userId,
           affected: processId,
           entity: LogEntities.process,
-          action: LogActions.common.initProcess,
+          action: LogActions.process.init,
           description: '',
         };
 
@@ -276,39 +276,59 @@ export class ProcessesService {
     }
   }
 
-  async createSubstage(stageId: string, createSubstageDto: CreateSubstageDto) {
+  async createSubstage(
+    stageId: string,
+    createSubstageDto: CreateSubstageDto,
+    userId: string,
+  ) {
     const { name, description, parentSubstageId } = createSubstageDto;
     try {
-      const stage = await this.prisma.processStage.findUnique({
-        where: { id: stageId },
+      return await this.prisma.$transaction(async (tx) => {
+        const stage = await tx.processStage.findUnique({
+          where: { id: stageId },
+        });
+
+        if (!stage) throw new Error('The stage was not found');
+
+        const count = await tx.processSubstage.count({
+          where: {
+            stageId,
+          },
+        });
+
+        const newSubStage = await tx.processSubstage.create({
+          data: {
+            name,
+            description,
+            stageId,
+            status: 'opened',
+            order: count + 1,
+            parentSubstageId: parentSubstageId ?? null,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.process.substage.create,
+          entity: LogEntities.substage,
+          affected: newSubStage.id,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return newSubStage;
       });
-
-      if (!stage) throw new Error('The stage was not found');
-
-      const count = await this.prisma.processSubstage.count({
-        where: {
-          stageId,
-        },
-      });
-
-      await this.prisma.processSubstage.create({
-        data: {
-          name,
-          description,
-          stageId,
-          status: 'opened',
-          order: count + 1,
-          parentSubstageId: parentSubstageId ?? null,
-        },
-      });
-
-      return;
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
   }
 
-  async createStage(processId: string, createStageDto: CreateStageDto) {
+  async createStage(
+    processId: string,
+    createStageDto: CreateStageDto,
+    userId: string,
+  ) {
     const { name, description, order } = createStageDto;
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -337,6 +357,17 @@ export class ProcessesService {
             processId,
           },
         });
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.process.stage.create,
+          entity: LogEntities.stage,
+          affected: newStage.id,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
         return newStage;
       });
     } catch (error: unknown) {
