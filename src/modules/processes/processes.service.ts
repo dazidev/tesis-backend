@@ -343,13 +343,27 @@ export class ProcessesService {
 
   async getSubStageById(subStageId: string) {
     try {
-      const stage = this.prisma.processSubstage.findFirst({
+      const substage = await this.prisma.processSubstage.findFirst({
+        include: {
+          digitalFolders: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              _count: {
+                select: {
+                  digitalFiles: true,
+                },
+              },
+            },
+          },
+        },
         where: { id: subStageId },
       });
 
-      if (!stage) throw new Error('Substage not found.');
+      if (!substage) throw new Error('Substage not found.');
 
-      return stage;
+      return substage;
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
@@ -445,7 +459,22 @@ export class ProcessesService {
 
   async getStageById(stageId: string) {
     try {
-      const stage = this.prisma.processStage.findFirst({
+      const stage = await this.prisma.processStage.findFirst({
+        include: {
+          digitalFolders: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              _count: {
+                select: {
+                  digitalFiles: true,
+                },
+              },
+            },
+          },
+        },
+
         where: { id: stageId },
       });
 
