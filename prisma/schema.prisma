@@ -42,6 +42,9 @@ model User {
   processesManaged Process[]        @relation("ManagedBy")
   processesCreated Process[]        @relation("CreatedBy")
 
+  digitalFolders   DigitalFolder[]
+  digitalFiles     DigitalFile[]
+
   @@index([roles])
   @@map("users")
 }
@@ -173,6 +176,8 @@ model ProcessStage {
   updatedAt         DateTime           @updatedAt @db.Timestamptz()
   childrenSubstages ProcessSubstage[]
 
+  digitalFolders    DigitalFolder[]
+
   @@map("process_stages")
 }
 
@@ -197,7 +202,48 @@ model ProcessSubstage {
 
   childrenSubstages ProcessSubstage[] @relation("SubstageHierarchy")
 
+  digitalFolders    DigitalFolder[]
+
   @@index([stageId])
   @@index([parentSubstageId])
   @@map("process_substages")
+}
+
+model DigitalFolder {
+  id           String            @default(uuid()) @id
+  name         String
+  description  String
+  createdAt    DateTime          @default(now()) @db.Timestamptz()
+  updatedAt    DateTime
+
+  createdById  String
+  createdBy    User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  stageId      String
+  stage        ProcessStage     @relation(fields: [stageId],references: [id])
+
+  substageId   String?
+  substage     ProcessSubstage? @relation(fields: [substageId],references: [id])
+
+  digitalFiles DigitalFile[]
+
+  @@index([stageId])
+  @@index([substageId])
+  @@map("digital_folder")
+}
+
+model DigitalFile {
+  id              String          @default(uuid()) @id
+  name            String
+  description     String
+  createdAt       DateTime        @default(now()) @db.Timestamptz()
+  updatedAt       DateTime
+
+  createdById     String
+  createdBy       User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  digitalFolderId String
+  digitalFolder   DigitalFolder? @relation(fields: [digitalFolderId],references: [id])
+
+  @@map("digital_file")
 }
