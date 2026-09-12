@@ -341,6 +341,20 @@ export class ProcessesService {
     }
   }
 
+  async getSubStageById(subStageId: string) {
+    try {
+      const stage = this.prisma.processSubstage.findFirst({
+        where: { id: subStageId },
+      });
+
+      if (!stage) throw new Error('Substage not found.');
+
+      return stage;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
   async deactivateSubstage(
     substageId: string,
     deactivateSubstageDto: DeactivateSubstageDto,
@@ -424,6 +438,20 @@ export class ProcessesService {
 
         return newStage;
       });
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async getStageById(stageId: string) {
+    try {
+      const stage = this.prisma.processStage.findFirst({
+        where: { id: stageId },
+      });
+
+      if (!stage) throw new Error('Stage not found.');
+
+      return stage;
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }

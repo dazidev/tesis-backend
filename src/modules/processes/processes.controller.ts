@@ -83,6 +83,13 @@ export class ProcessesController {
     return this.processesService.createStage(processId, createStageDto, userId);
   }
 
+  //* GET STAGE BY ID
+  @Get('stage/:stageId')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  getStageById(@Param('stageId', ParseUUIDPipe) stageId: string) {
+    return this.processesService.getStageById(stageId);
+  }
+
   //* DELETE/DEACTIVE STAGE
   @Patch('stage/:stageId/deactivate')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
@@ -111,6 +118,13 @@ export class ProcessesController {
       createSubstageDto,
       userId,
     );
+  }
+
+  //* GET SUBSTAGE BY ID
+  @Get('substage/:subStageId')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  getSubStageById(@Param('subStageId', ParseUUIDPipe) subStageId: string) {
+    return this.processesService.getSubStageById(subStageId);
   }
 
   //* DELETE/DEACTIVE SUBSTAGE
