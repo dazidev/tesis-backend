@@ -19,6 +19,16 @@ export const LogActions = {
       delete: 'DELETE_SUBSTAGE',
     },
   },
+  folder: {
+    create: 'CREATE_FOLDER',
+    deactivate: 'DEACTIVATE_FOLDER',
+    delete: 'DELETE_FOLDER',
+  },
+  file: {
+    create: 'CREATE_FILE',
+    deactivate: 'DEACTIVATE_FILE',
+    delete: 'DELETE_FILE',
+  },
 };
 
 export const LogEntities = {
@@ -26,4 +36,6 @@ export const LogEntities = {
   process: 'PROCESS',
   stage: 'STAGE',
   substage: 'SUBSTAGE',
+  folder: 'FOLDER',
+  file: 'FILE',
 };

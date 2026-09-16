@@ -214,7 +214,7 @@ model DigitalFolder {
   name         String
   description  String
   createdAt    DateTime          @default(now()) @db.Timestamptz()
-  updatedAt    DateTime
+  updatedAt    DateTime          @updatedAt @db.Timestamptz()
 
   createdById  String
   createdBy    User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
@@ -237,7 +237,7 @@ model DigitalFile {
   name            String
   description     String
   createdAt       DateTime        @default(now()) @db.Timestamptz()
-  updatedAt       DateTime
+  updatedAt       DateTime        @updatedAt @db.Timestamptz()
 
   createdById     String
   createdBy       User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
