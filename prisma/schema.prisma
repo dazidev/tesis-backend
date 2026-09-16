@@ -215,6 +215,7 @@ model DigitalFolder {
   description  String
   createdAt    DateTime          @default(now()) @db.Timestamptz()
   updatedAt    DateTime          @updatedAt @db.Timestamptz()
+  deletedAt    DateTime?         @db.Timestamptz()
 
   createdById  String
   createdBy    User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
@@ -238,6 +239,7 @@ model DigitalFile {
   description     String
   createdAt       DateTime        @default(now()) @db.Timestamptz()
   updatedAt       DateTime        @updatedAt @db.Timestamptz()
+  deletedAt       DateTime?       @db.Timestamptz()
 
   createdById     String
   createdBy       User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
