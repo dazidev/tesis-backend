@@ -6,6 +6,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { ProcessesModule } from './modules/processes/processes.module';
 import { LogsModule } from './modules/logs/logs.module';
+import { FolderModule } from './modules/folder/folder.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { LogsModule } from './modules/logs/logs.module';
     AdminModule,
     ProcessesModule,
     LogsModule,
+    FolderModule,
   ],
 })
 export class AppModule {}
