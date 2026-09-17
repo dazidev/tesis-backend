@@ -1,4 +1,12 @@
-import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { FolderService } from './folder.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { ValidRoles } from '../auth/interfaces';
@@ -14,9 +22,15 @@ export class FolderController {
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   createFolder(
     @GetUser('id') userId: string,
-    @Body() createFolderDto: CreateFolderDto,
     @Param('stageId', ParseUUIDPipe) stageId: string,
+    @Body() createFolderDto: CreateFolderDto,
   ) {
     return this.folderService.createFolder(userId, createFolderDto, stageId);
+  }
+
+  @Get(':id')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  getFolder(@Param('id', ParseUUIDPipe) id: string) {
+    return this.folderService.getFolder(id);
   }
 }

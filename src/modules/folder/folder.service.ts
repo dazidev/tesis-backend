@@ -52,6 +52,33 @@ export class FolderService {
     }
   }
 
+  async getFolder(id: string) {
+    try {
+      const folder = await this.prisma.digitalFolder.findFirst({
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          substageId: true,
+          createdAt: true,
+          updatedAt: true,
+          deletedAt: true,
+          createdById: true,
+          stageId: true,
+          digitalFiles: true,
+        },
+        where: {
+          id,
+          deletedAt: null,
+        },
+      });
+
+      return folder;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
   private handleDBErrors(error): never {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
