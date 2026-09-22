@@ -105,6 +105,26 @@ export class FolderController {
     });
   }
 
+  @Get('file/:fileId/download')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  @Header('Cache-Control', 'private, no-store')
+  @Header('Pragma', 'no-cache')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async downloadFile(
+    @GetUser() user: User,
+    @Param('fileId', ParseUUIDPipe) fileId: string,
+  ): Promise<StreamableFile> {
+    const file = await this.folderService.downloadFile(user, fileId);
+
+    const safeFilename = file.originalName.replace(/["\r\n]/g, '_');
+
+    return new StreamableFile(file.stream, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${safeFilename}"`,
+      length: file.size,
+    });
+  }
+
   @Delete('file/:fileId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   deleteFile(

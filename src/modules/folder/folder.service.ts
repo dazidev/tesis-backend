@@ -182,76 +182,8 @@ export class FolderService {
     size: number;
     stream: ReadStream;
   }> {
-    const digitalFile = await this.prisma.digitalFile.findFirst({
-      where: {
-        id: fileId,
-        deletedAt: null,
-
-        digitalFolder: {
-          deletedAt: null,
-        },
-      },
-      select: {
-        id: true,
-        originalName: true,
-        storagePath: true,
-        mimeType: true,
-
-        digitalFolder: {
-          select: {
-            stage: {
-              select: {
-                process: {
-                  select: {
-                    managedByID: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!digitalFile) {
-      throw new NotFoundException('Archivo no encontrado');
-    }
-
-    const isAdmin = user.roles.includes(ValidRoles.admin);
-
-    const isLawyer = user.roles.includes(ValidRoles.lawyer);
-
-    const processManagerId =
-      digitalFile.digitalFolder?.stage.process.managedByID;
-
-    const lawyerHasAccess = isLawyer && processManagerId === user.id;
-
-    //! todo: Validar esta validación del abogado.
-    if (!isAdmin && !lawyerHasAccess) {
-      throw new NotFoundException('Archivo no encontrado');
-    }
-
-    if (!digitalFile.storagePath) {
-      throw new NotFoundException('Archivo físico no disponible');
-    }
-
-    const filesRoot = this.getFilesRoot();
-    const absolutePath = this.resolveStoragePath(
-      filesRoot,
-      digitalFile.storagePath,
-    );
-
-    let fileStats;
-
-    try {
-      fileStats = await stat(absolutePath);
-    } catch {
-      throw new NotFoundException('Archivo físico no encontrado');
-    }
-
-    if (!fileStats.isFile()) {
-      throw new NotFoundException('Archivo físico no encontrado');
-    }
+    const { digitalFile, absolutePath, fileStats } =
+      await this.getAccessibleFile(user, fileId);
 
     const dataLog: CreateLog = {
       userId: user.id,
@@ -263,13 +195,41 @@ export class FolderService {
 
     await this.logsService.create(dataLog, this.prisma);
 
-    const stream = createReadStream(absolutePath);
+    return {
+      id: digitalFile.id,
+      originalName: digitalFile.originalName,
+      size: fileStats.size,
+      stream: createReadStream(absolutePath),
+    };
+  }
+
+  async downloadFile(
+    user: User,
+    fileId: string,
+  ): Promise<{
+    id: string;
+    originalName: string;
+    size: number;
+    stream: ReadStream;
+  }> {
+    const { digitalFile, absolutePath, fileStats } =
+      await this.getAccessibleFile(user, fileId);
+
+    const dataLog: CreateLog = {
+      userId: user.id,
+      action: LogActions.file.download,
+      entity: LogEntities.file,
+      affected: digitalFile.id,
+      description: 'Descarga de archivo PDF',
+    };
+
+    await this.logsService.create(dataLog, this.prisma);
 
     return {
       id: digitalFile.id,
       originalName: digitalFile.originalName,
       size: fileStats.size,
-      stream,
+      stream: createReadStream(absolutePath),
     };
   }
 
@@ -477,6 +437,86 @@ export class FolderService {
 
       throw error;
     }
+  }
+
+  private async getAccessibleFile(user: User, fileId: string) {
+    const digitalFile = await this.prisma.digitalFile.findFirst({
+      where: {
+        id: fileId,
+        deletedAt: null,
+
+        digitalFolder: {
+          deletedAt: null,
+        },
+      },
+      select: {
+        id: true,
+        originalName: true,
+        storagePath: true,
+        mimeType: true,
+
+        digitalFolder: {
+          select: {
+            stage: {
+              select: {
+                process: {
+                  select: {
+                    managedByID: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!digitalFile) {
+      throw new NotFoundException('Archivo no encontrado');
+    }
+
+    const isAdmin = user.roles.includes(ValidRoles.admin);
+
+    const isLawyer = user.roles.includes(ValidRoles.lawyer);
+
+    const processManagerId =
+      digitalFile.digitalFolder?.stage.process.managedByID;
+
+    //! todo: Validar esta validación del abogado.
+    const lawyerHasAccess = isLawyer && processManagerId === user.id;
+
+    if (!isAdmin && !lawyerHasAccess) {
+      throw new NotFoundException('Archivo no encontrado');
+    }
+
+    if (!digitalFile.storagePath) {
+      throw new NotFoundException('Archivo físico no disponible');
+    }
+
+    const filesRoot = this.getFilesRoot();
+
+    const absolutePath = this.resolveStoragePath(
+      filesRoot,
+      digitalFile.storagePath,
+    );
+
+    let fileStats;
+
+    try {
+      fileStats = await stat(absolutePath);
+    } catch {
+      throw new NotFoundException('Archivo físico no encontrado');
+    }
+
+    if (!fileStats.isFile()) {
+      throw new NotFoundException('Archivo físico no encontrado');
+    }
+
+    return {
+      digitalFile,
+      absolutePath,
+      fileStats,
+    };
   }
 
   private getFilesRoot(): string {
