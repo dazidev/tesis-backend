@@ -26,6 +26,7 @@ export const LogActions = {
   },
   file: {
     create: 'CREATE_FILE',
+    view: 'VIEW_FILE',
     deactivate: 'DEACTIVATE_FILE',
     delete: 'DELETE_FILE',
   },

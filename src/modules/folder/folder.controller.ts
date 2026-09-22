@@ -10,12 +10,14 @@ import {
   UploadedFile,
   UseInterceptors,
   Delete,
+  Header,
+  StreamableFile,
 } from '@nestjs/common';
 
 import { FileInterceptor } from '@nestjs/platform-express';
 import { FolderService } from './folder.service';
 import { Auth } from '../auth/decorators/auth.decorator';
-import { ValidRoles } from '../auth/interfaces';
+import { User, ValidRoles } from '../auth/interfaces';
 import { GetUser } from '../auth/decorators';
 import { CreateDigitalFileDto, CreateFolderDto } from './dto';
 
@@ -32,6 +34,12 @@ export class FolderController {
     @Body() createFolderDto: CreateFolderDto,
   ) {
     return this.folderService.createFolder(userId, createFolderDto, stageId);
+  }
+
+  @Get(':id')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  getFolder(@Param('id', ParseUUIDPipe) id: string) {
+    return this.folderService.getFolder(id);
   }
 
   @Post(':folderId/file')
@@ -77,10 +85,24 @@ export class FolderController {
     );
   }
 
-  @Get(':id')
+  @Get('file/:fileId/view')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
-  getFolder(@Param('id', ParseUUIDPipe) id: string) {
-    return this.folderService.getFolder(id);
+  @Header('Cache-Control', 'private, no-store')
+  @Header('Pragma', 'no-cache')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async viewFile(
+    @GetUser() user: User,
+    @Param('fileId', ParseUUIDPipe) fileId: string,
+  ): Promise<StreamableFile> {
+    const file = await this.folderService.viewFile(user, fileId);
+
+    const safeFilename = file.originalName.replace(/["\r\n]/g, '_');
+
+    return new StreamableFile(file.stream, {
+      type: 'application/pdf',
+      disposition: `inline; filename="${safeFilename}"`,
+      length: file.size,
+    });
   }
 
   @Delete('file/:fileId')
