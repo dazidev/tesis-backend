@@ -9,6 +9,7 @@ import {
   Post,
   UploadedFile,
   UseInterceptors,
+  Delete,
 } from '@nestjs/common';
 
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -80,5 +81,14 @@ export class FolderController {
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   getFolder(@Param('id', ParseUUIDPipe) id: string) {
     return this.folderService.getFolder(id);
+  }
+
+  @Delete('file/:fileId')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  deleteFile(
+    @GetUser('id') userId: string,
+    @Param('fileId', ParseUUIDPipe) fileId: string,
+  ) {
+    return this.folderService.deleteFile(userId, fileId);
   }
 }

@@ -239,7 +239,7 @@ model DigitalFile {
   description     String
 
   originalName    String
-  storagePath     String          @unique
+  storagePath     String?         @unique
   mimeType        String
   size            Int
 
