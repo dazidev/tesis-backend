@@ -12,7 +12,11 @@ import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { LogsService } from '../logs/logs.service';
 import { Prisma } from 'src/generated/prisma/client';
-import { CreateDigitalFileDto, CreateFolderDto } from './dto';
+import {
+  CreateDigitalFileDto,
+  CreateFolderDto,
+  UpdateDigitalFileDto,
+} from './dto';
 
 import { CreateLog } from '../logs/interfaces';
 import { LogActions, LogEntities } from 'src/common';
@@ -517,6 +521,48 @@ export class FolderService {
       absolutePath,
       fileStats,
     };
+  }
+
+  async updateFile(
+    user: User,
+    fileId: string,
+    updateDigitalFileDto: UpdateDigitalFileDto,
+  ) {
+    try {
+      const { digitalFile } = await this.getAccessibleFile(user, fileId);
+
+      const { name, description } = updateDigitalFileDto;
+
+      return await this.prisma.$transaction(async (tx) => {
+        const updatedFile = await tx.digitalFile.update({
+          where: {
+            id: digitalFile.id,
+          },
+          data: {
+            name,
+            description,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+          action: LogActions.file.update,
+          entity: LogEntities.file,
+          affected: digitalFile.id,
+          description: 'Actualización de nombre y descripción del archivo',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return updatedFile;
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.handleDBErrors(error);
+    }
   }
 
   private getFilesRoot(): string {

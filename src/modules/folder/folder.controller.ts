@@ -12,6 +12,7 @@ import {
   Delete,
   Header,
   StreamableFile,
+  Patch,
 } from '@nestjs/common';
 
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -19,7 +20,11 @@ import { FolderService } from './folder.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { User, ValidRoles } from '../auth/interfaces';
 import { GetUser } from '../auth/decorators';
-import { CreateDigitalFileDto, CreateFolderDto } from './dto';
+import {
+  CreateDigitalFileDto,
+  CreateFolderDto,
+  UpdateDigitalFileDto,
+} from './dto';
 
 @Auth()
 @Controller('folder')
@@ -128,6 +133,16 @@ export class FolderController {
       length: file.size,
     });
   }*/
+
+  @Patch('file/:fileId')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  updateFile(
+    @GetUser() user: User,
+    @Param('fileId', ParseUUIDPipe) fileId: string,
+    @Body() updateDigitalFileDto: UpdateDigitalFileDto,
+  ) {
+    return this.folderService.updateFile(user, fileId, updateDigitalFileDto);
+  }
 
   @Delete('file/:fileId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)

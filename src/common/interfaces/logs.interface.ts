@@ -28,6 +28,7 @@ export const LogActions = {
     create: 'CREATE_FILE',
     view: 'VIEW_FILE',
     download: 'DOWNLOAD_FILE',
+    update: 'UPDATE_FILE',
     deactivate: 'DEACTIVATE_FILE',
     delete: 'DELETE_FILE',
   },
