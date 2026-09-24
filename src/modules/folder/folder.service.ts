@@ -100,7 +100,7 @@ export class FolderService {
     file: Express.Multer.File,
   ) {
     let savedAbsolutePath: string | undefined;
-
+    const { name, description } = createDigitalFileDto;
     try {
       const folder = await this.prisma.digitalFolder.findFirst({
         where: {
@@ -131,8 +131,8 @@ export class FolderService {
           data: {
             id: fileId,
 
-            name: createDigitalFileDto.name,
-            description: createDigitalFileDto.description,
+            name,
+            description,
 
             originalName: file.originalname,
             storagePath,
@@ -178,7 +178,7 @@ export class FolderService {
     fileId: string,
   ): Promise<{
     id: string;
-    originalName: string;
+    name: string;
     size: number;
     stream: ReadStream;
   }> {
@@ -197,13 +197,13 @@ export class FolderService {
 
     return {
       id: digitalFile.id,
-      originalName: digitalFile.originalName,
+      name: digitalFile.name,
       size: fileStats.size,
       stream: createReadStream(absolutePath),
     };
   }
 
-  async downloadFile(
+  /*async downloadFile(
     user: User,
     fileId: string,
   ): Promise<{
@@ -231,7 +231,7 @@ export class FolderService {
       size: fileStats.size,
       stream: createReadStream(absolutePath),
     };
-  }
+  }*/
 
   async deleteFile(userId: string, fileId: string) {
     let originalAbsolutePath: string | undefined;
@@ -451,7 +451,7 @@ export class FolderService {
       },
       select: {
         id: true,
-        originalName: true,
+        name: true,
         storagePath: true,
         mimeType: true,
 

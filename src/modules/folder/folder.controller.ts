@@ -96,16 +96,20 @@ export class FolderController {
   ): Promise<StreamableFile> {
     const file = await this.folderService.viewFile(user, fileId);
 
-    const safeFilename = file.originalName.replace(/["\r\n]/g, '_');
+    const safeFilename = file.name
+      .replace(/["\r\n]/g, '_')
+      .replace(/\.pdf$/i, '');
+
+    const encodedFilename = encodeURIComponent(`${safeFilename}.pdf`);
 
     return new StreamableFile(file.stream, {
       type: 'application/pdf',
-      disposition: `inline; filename="${safeFilename}"`,
+      disposition: `inline; filename="${safeFilename}.pdf"; filename*=UTF-8''${encodedFilename}`,
       length: file.size,
     });
   }
 
-  @Get('file/:fileId/download')
+  /* @Get('file/:fileId/download')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   @Header('Cache-Control', 'private, no-store')
   @Header('Pragma', 'no-cache')
@@ -123,7 +127,7 @@ export class FolderController {
       disposition: `attachment; filename="${safeFilename}"`,
       length: file.size,
     });
-  }
+  }*/
 
   @Delete('file/:fileId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
