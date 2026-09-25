@@ -5,20 +5,18 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-
 import { PrismaService } from '../prisma/prisma.service';
-
 import { Prisma } from 'src/generated/prisma/client';
-
 import { LogsService } from '../logs/logs.service';
-
 import { CreateLog } from '../logs/interfaces';
-
 import { LogActions, LogEntities } from 'src/common';
-
 import { type User, ValidRoles } from '../auth/interfaces';
-
-import { CreateTaskDto } from './dto';
+import {
+  CreateTaskDto,
+  DeactivateTaskDto,
+  UpdateTaskCompletionDto,
+  UpdateTaskDto,
+} from './dto';
 
 @Injectable()
 export class TaskService {
@@ -136,6 +134,202 @@ export class TaskService {
 
       this.handleDBErrors(error);
     }
+  }
+
+  async updateTaskCompletion(
+    user: User,
+    taskId: string,
+    updateTaskCompletionDto: UpdateTaskCompletionDto,
+  ) {
+    try {
+      const task = await this.getAccessibleTask(user, taskId);
+
+      const { completed } = updateTaskCompletionDto;
+
+      if (completed && task.completedAt) {
+        return task;
+      }
+
+      if (!completed && !task.completedAt) {
+        return task;
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        const updatedTask = await tx.task.update({
+          where: {
+            id: task.id,
+          },
+
+          data: {
+            completedAt: completed ? new Date() : null,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+
+          action: completed ? LogActions.task.complete : LogActions.task.reopen,
+
+          entity: LogEntities.task,
+
+          affected: task.id,
+
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return updatedTask;
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.handleDBErrors(error);
+    }
+  }
+
+  async updateTask(user: User, taskId: string, updateTaskDto: UpdateTaskDto) {
+    try {
+      const task = await this.getAccessibleTask(user, taskId);
+      const { description, dueDate } = updateTaskDto;
+      const parsedDueDate = new Date(dueDate);
+
+      if (
+        parsedDueDate.getTime() <= Date.now() &&
+        parsedDueDate.getTime() !== task.dueDate.getTime()
+      ) {
+        throw new BadRequestException(
+          'La nueva fecha límite debe ser posterior a la fecha actual',
+        );
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        const updatedTask = await tx.task.update({
+          where: {
+            id: task.id,
+          },
+          data: {
+            description,
+            dueDate: parsedDueDate,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+          action: LogActions.task.update,
+          entity: LogEntities.task,
+          affected: task.id,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return updatedTask;
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.handleDBErrors(error);
+    }
+  }
+
+  async deactivateTask(
+    user: User,
+    taskId: string,
+    deactivateTaskDto: DeactivateTaskDto,
+  ) {
+    try {
+      const task = await this.getAccessibleTask(user, taskId);
+
+      const { reason } = deactivateTaskDto;
+
+      return await this.prisma.$transaction(async (tx) => {
+        const deletedTask = await tx.task.update({
+          where: {
+            id: task.id,
+          },
+
+          data: {
+            deletedAt: new Date(),
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+
+          action: LogActions.task.deactivate,
+
+          entity: LogEntities.task,
+
+          affected: task.id,
+
+          description: reason,
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return deletedTask;
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.handleDBErrors(error);
+    }
+  }
+
+  private async getAccessibleTask(user: User, taskId: string) {
+    const task = await this.prisma.task.findFirst({
+      where: {
+        id: taskId,
+        deletedAt: null,
+      },
+
+      select: {
+        id: true,
+        description: true,
+        dueDate: true,
+        completedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+        createdById: true,
+        stageId: true,
+        substageId: true,
+
+        stage: {
+          select: {
+            process: {
+              select: {
+                managedByID: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      throw new NotFoundException('Tarea no encontrada');
+    }
+
+    const isAdmin = user.roles.includes(ValidRoles.admin);
+
+    const isLawyer = user.roles.includes(ValidRoles.lawyer);
+
+    const lawyerHasAccess =
+      isLawyer && task.stage.process.managedByID === user.id;
+
+    if (!isAdmin && !lawyerHasAccess) {
+      throw new NotFoundException('Tarea no encontrada');
+    }
+
+    return task;
   }
 
   private handleDBErrors(error: unknown): never {
