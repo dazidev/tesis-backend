@@ -44,6 +44,7 @@ model User {
 
   digitalFolders   DigitalFolder[]
   digitalFiles     DigitalFile[]
+  tasksCreated     Task[]           @relation("TaskCreatedBy")
 
   @@index([roles])
   @@map("users")
@@ -177,6 +178,7 @@ model ProcessStage {
   childrenSubstages ProcessSubstage[]
 
   digitalFolders    DigitalFolder[]
+  tasks             Task[]
 
   @@map("process_stages")
 }
@@ -203,6 +205,7 @@ model ProcessSubstage {
   childrenSubstages ProcessSubstage[] @relation("SubstageHierarchy")
 
   digitalFolders    DigitalFolder[]
+  tasks             Task[]
 
   @@index([stageId])
   @@index([parentSubstageId])
@@ -254,4 +257,30 @@ model DigitalFile {
   digitalFolder   DigitalFolder? @relation(fields: [digitalFolderId],references: [id])
 
   @@map("digital_file")
+}
+
+model Task {
+  id          String            @default(uuid()) @id
+  description String
+  dueDate     DateTime          @db.Timestamptz()
+  completedAt DateTime?         @db.Timestamptz()
+
+  createdAt   DateTime          @default(now()) @db.Timestamptz()
+  updatedAt   DateTime          @updatedAt @db.Timestamptz()
+  deletedAt   DateTime?         @db.Timestamptz()
+
+  createdById String
+  createdBy   User             @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  stageId     String
+  stage       ProcessStage     @relation(fields: [stageId], references: [id])
+
+  substageId  String?
+  substage    ProcessSubstage? @relation(fields: [substageId], references: [id])
+
+  @@index([stageId])
+  @@index([substageId])
+  @@index([deletedAt, completedAt, dueDate])
+
+  @@map("tasks")
 }
