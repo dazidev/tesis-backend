@@ -346,6 +346,9 @@ export class ProcessesService {
       const substage = await this.prisma.processSubstage.findFirst({
         include: {
           digitalFolders: {
+            where: {
+              deletedAt: null,
+            },
             select: {
               id: true,
               name: true,
@@ -371,7 +374,12 @@ export class ProcessesService {
             },
           },
         },
-        where: { id: subStageId },
+        where: {
+          id: subStageId,
+          status: {
+            not: 'deleted',
+          },
+        },
       });
 
       if (!substage) throw new Error('Substage not found.');
@@ -475,6 +483,9 @@ export class ProcessesService {
       const stage = await this.prisma.processStage.findFirst({
         include: {
           digitalFolders: {
+            where: {
+              deletedAt: null,
+            },
             select: {
               id: true,
               name: true,
@@ -502,7 +513,12 @@ export class ProcessesService {
           },
         },
 
-        where: { id: stageId },
+        where: {
+          id: stageId,
+          status: {
+            not: 'deleted',
+          },
+        },
       });
 
       if (!stage) throw new Error('Stage not found.');

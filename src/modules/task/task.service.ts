@@ -90,12 +90,20 @@ export class TaskService {
         }
       }
 
+      const parsedDueDate = new Date(dueDate);
+
+      if (parsedDueDate.getTime() <= Date.now()) {
+        throw new BadRequestException(
+          'La fecha límite debe ser posterior a la fecha actual',
+        );
+      }
+
       return await this.prisma.$transaction(async (tx) => {
         const task = await tx.task.create({
           data: {
             description,
 
-            dueDate: new Date(dueDate),
+            dueDate: parsedDueDate,
 
             createdById: user.id,
 
