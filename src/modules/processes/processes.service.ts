@@ -361,6 +361,15 @@ export class ProcessesService {
               },
             },
           },
+          tasks: {
+            where: {
+              deletedAt: null,
+            },
+
+            orderBy: {
+              dueDate: 'asc',
+            },
+          },
         },
         where: { id: subStageId },
       });
@@ -479,6 +488,16 @@ export class ProcessesService {
                   },
                 },
               },
+            },
+          },
+          tasks: {
+            where: {
+              deletedAt: null,
+              substageId: null,
+            },
+
+            orderBy: {
+              dueDate: 'asc',
             },
           },
         },

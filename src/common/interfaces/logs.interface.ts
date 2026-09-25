@@ -33,6 +33,13 @@ export const LogActions = {
     deactivate: 'DEACTIVATE_FILE',
     delete: 'DELETE_FILE',
   },
+  task: {
+    create: 'CREATE_TASK',
+    update: 'UPDATE_TASK',
+    complete: 'COMPLETE_TASK',
+    reopen: 'REOPEN_TASK',
+    deactivate: 'DEACTIVATE_TASK',
+  },
 };
 
 export const LogEntities = {
@@ -42,4 +49,5 @@ export const LogEntities = {
   substage: 'SUBSTAGE',
   folder: 'FOLDER',
   file: 'FILE',
+  task: 'TASK',
 };
