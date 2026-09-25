@@ -15,6 +15,7 @@ import { Prisma } from 'src/generated/prisma/client';
 import {
   CreateDigitalFileDto,
   CreateFolderDto,
+  DeactivateFolderDto,
   UpdateDigitalFileDto,
   UpdateFolderDto,
 } from './dto';
@@ -150,6 +151,192 @@ export class FolderService {
       }
 
       this.handleDBErrors(error);
+    }
+  }
+
+  async deactivateFolder(
+    user: User,
+    folderId: string,
+    deactivateFolderDto: DeactivateFolderDto,
+  ) {
+    const movedFiles: {
+      id: string;
+      originalAbsolutePath: string;
+      deletedAbsolutePath: string;
+      deletedStoragePath: string;
+    }[] = [];
+
+    let databaseUpdated = false;
+
+    try {
+      const { reason } = deactivateFolderDto;
+
+      const folder = await this.prisma.digitalFolder.findFirst({
+        where: {
+          id: folderId,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+
+          stage: {
+            select: {
+              process: {
+                select: {
+                  managedByID: true,
+                },
+              },
+            },
+          },
+
+          digitalFiles: {
+            where: {
+              deletedAt: null,
+            },
+            select: {
+              id: true,
+              storagePath: true,
+            },
+          },
+        },
+      });
+
+      if (!folder) {
+        throw new NotFoundException('Carpeta no encontrada');
+      }
+
+      //! todo: review this rules
+      const isAdmin = user.roles.includes(ValidRoles.admin);
+
+      const isLawyer = user.roles.includes(ValidRoles.lawyer);
+
+      const lawyerHasAccess =
+        isLawyer && folder.stage.process.managedByID === user.id;
+
+      if (!isAdmin && !lawyerHasAccess) {
+        throw new NotFoundException('Carpeta no encontrada');
+      }
+
+      const now = new Date();
+
+      const filesRoot = this.getFilesRoot();
+
+      if (folder.digitalFiles.length > 0) {
+        const deletedDirectory = path.join(
+          filesRoot,
+          'digital-files',
+          'deleted',
+          folderId,
+        );
+
+        await mkdir(deletedDirectory, {
+          recursive: true,
+        });
+
+        for (const file of folder.digitalFiles) {
+          if (!file.storagePath) {
+            throw new InternalServerErrorException(
+              'Uno de los archivos no tiene una ubicación física registrada',
+            );
+          }
+
+          const originalAbsolutePath = this.resolveStoragePath(
+            filesRoot,
+            file.storagePath,
+          );
+
+          const deletedStoragePath = path.posix.join(
+            'digital-files',
+            'deleted',
+            folderId,
+            `${file.id}.pdf`,
+          );
+
+          const deletedAbsolutePath = this.resolveStoragePath(
+            filesRoot,
+            deletedStoragePath,
+          );
+
+          await rename(originalAbsolutePath, deletedAbsolutePath);
+
+          movedFiles.push({
+            id: file.id,
+            originalAbsolutePath,
+            deletedAbsolutePath,
+            deletedStoragePath,
+          });
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.digitalFolder.update({
+          where: {
+            id: folderId,
+          },
+          data: {
+            deletedAt: now,
+          },
+        });
+
+        for (const file of movedFiles) {
+          await tx.digitalFile.update({
+            where: {
+              id: file.id,
+            },
+            data: {
+              deletedAt: now,
+              storagePath: file.deletedStoragePath,
+            },
+          });
+
+          const fileLog: CreateLog = {
+            userId: user.id,
+            action: LogActions.file.deactivate,
+            entity: LogEntities.file,
+            affected: file.id,
+            description: reason,
+          };
+
+          await this.logsService.create(fileLog, tx);
+        }
+
+        const folderLog: CreateLog = {
+          userId: user.id,
+          action: LogActions.folder.deactivate,
+          entity: LogEntities.folder,
+          affected: folderId,
+          description: reason,
+        };
+
+        await this.logsService.create(folderLog, tx);
+      });
+
+      databaseUpdated = true;
+
+      return {
+        id: folderId,
+        deletedAt: now,
+        filesAffected: movedFiles.length,
+      };
+    } catch (error: unknown) {
+      if (!databaseUpdated && movedFiles.length > 0) {
+        for (const file of [...movedFiles].reverse()) {
+          await rename(
+            file.deletedAbsolutePath,
+            file.originalAbsolutePath,
+          ).catch(() => undefined);
+        }
+      }
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        this.handleDBErrors(error);
+      }
+
+      throw new InternalServerErrorException('Error al eliminar la carpeta');
     }
   }
 

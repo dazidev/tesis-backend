@@ -352,7 +352,11 @@ export class ProcessesService {
               description: true,
               _count: {
                 select: {
-                  digitalFiles: true,
+                  digitalFiles: {
+                    where: {
+                      deletedAt: null,
+                    },
+                  },
                 },
               },
             },
@@ -468,7 +472,11 @@ export class ProcessesService {
               description: true,
               _count: {
                 select: {
-                  digitalFiles: true,
+                  digitalFiles: {
+                    where: {
+                      deletedAt: null,
+                    },
+                  },
                 },
               },
             },

@@ -23,6 +23,7 @@ import { GetUser } from '../auth/decorators';
 import {
   CreateDigitalFileDto,
   CreateFolderDto,
+  DeactivateFolderDto,
   UpdateDigitalFileDto,
   UpdateFolderDto,
 } from './dto';
@@ -58,6 +59,24 @@ export class FolderController {
     updateFolderDto: UpdateFolderDto,
   ) {
     return this.folderService.updateFolder(userId, folderId, updateFolderDto);
+  }
+
+  @Patch(':folderId/deactivate')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  deactivateFolder(
+    @GetUser() user: User,
+
+    @Param('folderId', ParseUUIDPipe)
+    folderId: string,
+
+    @Body()
+    deactivateFolderDto: DeactivateFolderDto,
+  ) {
+    return this.folderService.deactivateFolder(
+      user,
+      folderId,
+      deactivateFolderDto,
+    );
   }
 
   @Post(':folderId/file')
