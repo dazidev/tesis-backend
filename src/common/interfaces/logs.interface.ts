@@ -21,6 +21,7 @@ export const LogActions = {
   },
   folder: {
     create: 'CREATE_FOLDER',
+    update: 'UPDATE_FOLDER',
     deactivate: 'DEACTIVATE_FOLDER',
     delete: 'DELETE_FOLDER',
   },

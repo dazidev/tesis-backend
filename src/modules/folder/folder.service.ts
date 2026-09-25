@@ -16,6 +16,7 @@ import {
   CreateDigitalFileDto,
   CreateFolderDto,
   UpdateDigitalFileDto,
+  UpdateFolderDto,
 } from './dto';
 
 import { CreateLog } from '../logs/interfaces';
@@ -93,6 +94,61 @@ export class FolderService {
 
       return folder;
     } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async updateFolder(
+    userId: string,
+    folderId: string,
+    updateFolderDto: UpdateFolderDto,
+  ) {
+    try {
+      const { name, description } = updateFolderDto;
+
+      const folder = await this.prisma.digitalFolder.findFirst({
+        where: {
+          id: folderId,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!folder) {
+        throw new NotFoundException('Folder no encontrado');
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        const updatedFolder = await tx.digitalFolder.update({
+          where: {
+            id: folderId,
+          },
+          data: {
+            name,
+            description,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.folder.update,
+          entity: LogEntities.folder,
+          affected: updatedFolder.id,
+          description:
+            'Actualización de nombre y descripción de la carpeta digital',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return updatedFolder;
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.handleDBErrors(error);
     }
   }

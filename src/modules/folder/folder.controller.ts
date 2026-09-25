@@ -24,6 +24,7 @@ import {
   CreateDigitalFileDto,
   CreateFolderDto,
   UpdateDigitalFileDto,
+  UpdateFolderDto,
 } from './dto';
 
 @Auth()
@@ -45,6 +46,18 @@ export class FolderController {
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   getFolder(@Param('id', ParseUUIDPipe) id: string) {
     return this.folderService.getFolder(id);
+  }
+
+  @Patch(':folderId')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  updateFolder(
+    @GetUser('id') userId: string,
+    @Param('folderId', ParseUUIDPipe)
+    folderId: string,
+    @Body()
+    updateFolderDto: UpdateFolderDto,
+  ) {
+    return this.folderService.updateFolder(userId, folderId, updateFolderDto);
   }
 
   @Post(':folderId/file')
