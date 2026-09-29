@@ -16,6 +16,7 @@ export const LogActions = {
     },
     substage: {
       create: 'CREATE_SUBSTAGE',
+      close: 'CLOSE_SUBSTAGE',
       delete: 'DELETE_SUBSTAGE',
     },
   },

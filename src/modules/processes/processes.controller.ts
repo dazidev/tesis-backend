@@ -141,4 +141,17 @@ export class ProcessesController {
       userId,
     );
   }
+
+  //* CLOSE SUBSTAGE
+  @Patch('substage/:substageId/close')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  closeSubstage(
+    @GetUser('id')
+    userId: string,
+
+    @Param('substageId', ParseUUIDPipe)
+    substageId: string,
+  ) {
+    return this.processesService.closeSubstage(substageId, userId);
+  }
 }

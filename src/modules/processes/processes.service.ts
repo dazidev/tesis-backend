@@ -299,17 +299,51 @@ export class ProcessesService {
     userId: string,
   ) {
     const { name, description, parentSubstageId } = createSubstageDto;
+
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.lockStage(tx, stageId);
+
         const stage = await tx.processStage.findUnique({
-          where: { id: stageId },
+          where: {
+            id: stageId,
+          },
         });
 
-        if (!stage) throw new Error('The stage was not found');
+        if (!stage) {
+          throw new Error('The stage was not found');
+        }
+
+        if (stage.status !== 'opened') {
+          throw new Error('The stage must be opened to create a substage');
+        }
+
+        if (parentSubstageId) {
+          const parent = await tx.processSubstage.findFirst({
+            where: {
+              id: parentSubstageId,
+              stageId,
+              status: 'opened',
+            },
+
+            select: {
+              id: true,
+            },
+          });
+
+          if (!parent) {
+            throw new Error(
+              'The parent substage was not found or is not opened',
+            );
+          }
+        }
 
         const count = await tx.processSubstage.count({
           where: {
             stageId,
+            status: {
+              not: 'deleted',
+            },
           },
         });
 
@@ -323,6 +357,8 @@ export class ProcessesService {
             parentSubstageId: parentSubstageId ?? null,
           },
         });
+
+        await this.syncOpenSubstages(tx, stageId);
 
         const dataLog: CreateLog = {
           userId,
@@ -399,16 +435,52 @@ export class ProcessesService {
       const { reason } = deactivateSubstageDto;
 
       return await this.prisma.$transaction(async (tx) => {
-        const subStage = await tx.processSubstage.findUnique({
-          where: { id: substageId },
+        const subStage = await tx.processSubstage.findFirst({
+          where: {
+            id: substageId,
+            status: {
+              not: 'deleted',
+            },
+          },
+          select: {
+            id: true,
+            stageId: true,
+          },
         });
 
-        if (!subStage) throw new Error('The substage was not found!');
+        if (!subStage) {
+          throw new Error('The substage was not found!');
+        }
 
-        await tx.processSubstage.update({
-          data: { status: 'deleted' },
-          where: { id: substageId },
+        await this.lockStage(tx, subStage.stageId);
+
+        const substages = await tx.processSubstage.findMany({
+          where: {
+            stageId: subStage.stageId,
+            status: {
+              not: 'deleted',
+            },
+          },
+          select: {
+            id: true,
+            parentSubstageId: true,
+          },
         });
+
+        const subtreeIds = this.getSubstageTreeIds(substageId, substages);
+
+        await tx.processSubstage.updateMany({
+          where: {
+            id: {
+              in: subtreeIds,
+            },
+          },
+          data: {
+            status: 'deleted',
+          },
+        });
+
+        await this.syncOpenSubstages(tx, subStage.stageId);
 
         const dataLog: CreateLog = {
           userId,
@@ -419,7 +491,6 @@ export class ProcessesService {
         };
 
         await this.logsService.create(dataLog, tx);
-
         return;
       });
     } catch (error: unknown) {
@@ -485,6 +556,7 @@ export class ProcessesService {
           digitalFolders: {
             where: {
               deletedAt: null,
+              substageId: null,
             },
             select: {
               id: true,
@@ -566,6 +638,163 @@ export class ProcessesService {
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
+  }
+
+  async closeSubstage(substageId: string, userId: string) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const substage = await tx.processSubstage.findFirst({
+          where: {
+            id: substageId,
+            status: {
+              not: 'deleted',
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+            stageId: true,
+            digitalFolders: {
+              where: {
+                deletedAt: null,
+              },
+              select: {
+                id: true,
+                name: true,
+                _count: {
+                  select: {
+                    digitalFiles: {
+                      where: {
+                        deletedAt: null,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (!substage) {
+          throw new Error('The substage was not found');
+        }
+
+        await this.lockStage(tx, substage.stageId);
+
+        if (substage.status === 'closed') {
+          return {
+            id: substage.id,
+
+            status: substage.status,
+          };
+        }
+
+        if (substage.status !== 'opened') {
+          throw new Error('The substage must be opened');
+        }
+
+        const emptyFolder = substage.digitalFolders.find(
+          (folder) => folder._count.digitalFiles === 0,
+        );
+
+        if (emptyFolder) {
+          throw new Error(
+            `La carpeta "${emptyFolder.name}" no contiene documentos.`,
+          );
+        }
+
+        const updatedSubstage = await tx.processSubstage.update({
+          where: {
+            id: substage.id,
+          },
+          data: {
+            status: 'closed',
+          },
+        });
+
+        await this.syncOpenSubstages(tx, substage.stageId);
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.process.substage.close,
+          entity: LogEntities.substage,
+          affected: substage.id,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return updatedSubstage;
+      });
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  private async syncOpenSubstages(
+    tx: Prisma.TransactionClient,
+    stageId: string,
+  ): Promise<number> {
+    const openSubstages = await tx.processSubstage.count({
+      where: {
+        stageId,
+        status: 'opened',
+      },
+    });
+
+    await tx.processStage.update({
+      where: {
+        id: stageId,
+      },
+      data: {
+        openSubstages,
+      },
+    });
+
+    return openSubstages;
+  }
+
+  private async lockStage(tx: Prisma.TransactionClient, stageId: string) {
+    const stage = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id
+      FROM "process_stages"
+      WHERE id = ${stageId}
+      FOR UPDATE
+    `;
+
+    if (stage.length === 0) {
+      throw new Error('The stage was not found');
+    }
+  }
+
+  private getSubstageTreeIds(
+    rootId: string,
+    substages: {
+      id: string;
+      parentSubstageId: string | null;
+    }[],
+  ): string[] {
+    const ids: string[] = [];
+
+    const pending = [rootId];
+
+    while (pending.length > 0) {
+      const currentId = pending.shift();
+
+      if (!currentId) continue;
+
+      ids.push(currentId);
+
+      const children = substages.filter(
+        (substage) => substage.parentSubstageId === currentId,
+      );
+
+      for (const child of children) {
+        pending.push(child.id);
+      }
+    }
+
+    return ids;
   }
 
   private handleDBErrors(error): never {
