@@ -209,6 +209,7 @@ model ProcessSubstage {
 
   @@index([stageId])
   @@index([parentSubstageId])
+  @@index([stageId, status])
   @@map("process_substages")
 }
 
