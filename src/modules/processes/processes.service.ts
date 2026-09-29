@@ -445,11 +445,18 @@ export class ProcessesService {
           select: {
             id: true,
             stageId: true,
+            status: true,
           },
         });
 
         if (!subStage) {
           throw new Error('The substage was not found!');
+        }
+
+        if (subStage.status !== 'opened') {
+          throw new BadRequestException(
+            'Una subetapa cerrada no puede eliminarse.',
+          );
         }
 
         await this.lockStage(tx, subStage.stageId);
@@ -464,10 +471,24 @@ export class ProcessesService {
           select: {
             id: true,
             parentSubstageId: true,
+            status: true,
           },
         });
 
         const subtreeIds = this.getSubstageTreeIds(substageId, substages);
+
+        const subtreeIdSet = new Set(subtreeIds);
+
+        const closedSubstage = substages.find(
+          (substage) =>
+            subtreeIdSet.has(substage.id) && substage.status === 'closed',
+        );
+
+        if (closedSubstage) {
+          throw new BadRequestException(
+            'No puede eliminarse esta subetapa porque contiene una subetapa cerrada.',
+          );
+        }
 
         await tx.processSubstage.updateMany({
           where: {
@@ -611,16 +632,38 @@ export class ProcessesService {
 
       return await this.prisma.$transaction(async (tx) => {
         const stage = await tx.processStage.findUnique({
-          where: { id: stageId },
+          where: {
+            id: stageId,
+          },
         });
 
-        if (!stage) throw new Error('The stage was not found!');
-        if (stage.main)
-          throw new Error('The stage is principal, it can not be delete.');
+        if (!stage) {
+          throw new BadRequestException('La etapa no fue encontrada.');
+        }
+
+        if (stage.main) {
+          throw new BadRequestException(
+            'Una etapa principal no puede eliminarse.',
+          );
+        }
+
+        if (stage.status === 'closed') {
+          throw new BadRequestException(
+            'Una etapa cerrada no puede eliminarse.',
+          );
+        }
+
+        if (stage.status === 'deleted') {
+          throw new BadRequestException('La etapa ya se encuentra eliminada.');
+        }
 
         await tx.processStage.update({
-          data: { status: 'deleted' },
-          where: { id: stageId },
+          where: {
+            id: stageId,
+          },
+          data: {
+            status: 'deleted',
+          },
         });
 
         const dataLog: CreateLog = {
@@ -632,7 +675,6 @@ export class ProcessesService {
         };
 
         await this.logsService.create(dataLog, tx);
-
         return;
       });
     } catch (error: unknown) {
@@ -725,6 +767,128 @@ export class ProcessesService {
         await this.logsService.create(dataLog, tx);
 
         return updatedSubstage;
+      });
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async closeStage(stageId: string, userId: string) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockStage(tx, stageId);
+
+        const stage = await tx.processStage.findFirst({
+          where: {
+            id: stageId,
+            status: {
+              not: 'deleted',
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+            openSubstages: true,
+            digitalFolders: {
+              where: {
+                deletedAt: null,
+                substageId: null,
+              },
+              select: {
+                id: true,
+                name: true,
+                _count: {
+                  select: {
+                    digitalFiles: {
+                      where: {
+                        deletedAt: null,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (!stage) {
+          throw new Error('The stage was not found');
+        }
+
+        if (stage.status === 'closed') {
+          return {
+            id: stage.id,
+            status: stage.status,
+          };
+        }
+
+        if (stage.status !== 'opened') {
+          throw new Error('La etapa debe estar abierta para poder cerrarse.');
+        }
+
+        const realOpenSubstages = await tx.processSubstage.count({
+          where: {
+            stageId,
+            status: 'opened',
+          },
+        });
+
+        if (stage.openSubstages !== realOpenSubstages) {
+          await tx.processStage.update({
+            where: {
+              id: stageId,
+            },
+
+            data: {
+              openSubstages: realOpenSubstages,
+            },
+          });
+        }
+
+        if (realOpenSubstages > 0) {
+          throw new Error(
+            `La etapa tiene ${realOpenSubstages} subetapa${
+              realOpenSubstages === 1 ? '' : 's'
+            } abierta${realOpenSubstages === 1 ? '' : 's'}.`,
+          );
+        }
+
+        const emptyFolder = stage.digitalFolders.find(
+          (folder) => folder._count.digitalFiles === 0,
+        );
+
+        if (emptyFolder) {
+          throw new Error(
+            `La carpeta "${emptyFolder.name}" no contiene documentos.`,
+          );
+        }
+
+        const updatedStage = await tx.processStage.update({
+          where: {
+            id: stageId,
+          },
+          data: {
+            status: 'closed',
+            openSubstages: 0,
+          },
+          select: {
+            id: true,
+            status: true,
+            openSubstages: true,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.process.stage.close,
+          entity: LogEntities.stage,
+          affected: stage.id,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return updatedStage;
       });
     } catch (error: unknown) {
       this.handleDBErrors(error);

@@ -32,14 +32,10 @@ export class TaskService {
       const stage = await this.prisma.processStage.findFirst({
         where: {
           id: stageId,
-
-          status: {
-            not: 'deleted',
-          },
+          status: 'opened',
         },
         select: {
           id: true,
-
           process: {
             select: {
               managedByID: true,
@@ -68,14 +64,9 @@ export class TaskService {
         const substage = await this.prisma.processSubstage.findFirst({
           where: {
             id: substageId,
-
             stageId,
-
-            status: {
-              not: 'deleted',
-            },
+            status: 'opened',
           },
-
           select: {
             id: true,
           },
@@ -144,6 +135,8 @@ export class TaskService {
     try {
       const task = await this.getAccessibleTask(user, taskId);
 
+      this.validateTaskContainerIsOpened(task);
+
       const { completed } = updateTaskCompletionDto;
 
       if (completed && task.completedAt) {
@@ -193,6 +186,7 @@ export class TaskService {
   async updateTask(user: User, taskId: string, updateTaskDto: UpdateTaskDto) {
     try {
       const task = await this.getAccessibleTask(user, taskId);
+      this.validateTaskContainerIsOpened(task);
       const { description, dueDate } = updateTaskDto;
       const parsedDueDate = new Date(dueDate);
 
@@ -244,7 +238,7 @@ export class TaskService {
   ) {
     try {
       const task = await this.getAccessibleTask(user, taskId);
-
+      this.validateTaskContainerIsOpened(task);
       const { reason } = deactivateTaskDto;
 
       return await this.prisma.$transaction(async (tx) => {
@@ -260,13 +254,9 @@ export class TaskService {
 
         const dataLog: CreateLog = {
           userId: user.id,
-
           action: LogActions.task.deactivate,
-
           entity: LogEntities.task,
-
           affected: task.id,
-
           description: reason,
         };
 
@@ -289,7 +279,6 @@ export class TaskService {
         id: taskId,
         deletedAt: null,
       },
-
       select: {
         id: true,
         description: true,
@@ -301,14 +290,19 @@ export class TaskService {
         createdById: true,
         stageId: true,
         substageId: true,
-
         stage: {
           select: {
+            status: true,
             process: {
               select: {
                 managedByID: true,
               },
             },
+          },
+        },
+        substage: {
+          select: {
+            status: true,
           },
         },
       },
@@ -330,6 +324,28 @@ export class TaskService {
     }
 
     return task;
+  }
+
+  private validateTaskContainerIsOpened(task: {
+    stage: {
+      status: string;
+    };
+
+    substage: {
+      status: string;
+    } | null;
+  }) {
+    if (task.stage.status !== 'opened') {
+      throw new BadRequestException(
+        'La etapa está cerrada y sus tareas no pueden modificarse.',
+      );
+    }
+
+    if (task.substage && task.substage.status !== 'opened') {
+      throw new BadRequestException(
+        'La subetapa está cerrada y sus tareas no pueden modificarse.',
+      );
+    }
   }
 
   private handleDBErrors(error: unknown): never {

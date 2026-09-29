@@ -40,8 +40,41 @@ export class FolderService {
   ) {
     try {
       const { name, description, substageId } = createFolderDto;
-      //! todo: verified stageId and substageId
       return await this.prisma.$transaction(async (tx) => {
+        const stage = await tx.processStage.findFirst({
+          where: {
+            id: stageId,
+            status: 'opened',
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (!stage) {
+          throw new BadRequestException(
+            'La etapa no está abierta o no existe.',
+          );
+        }
+
+        if (substageId) {
+          const substage = await tx.processSubstage.findFirst({
+            where: {
+              id: substageId,
+              stageId,
+              status: 'opened',
+            },
+            select: {
+              id: true,
+            },
+          });
+
+          if (!substage) {
+            throw new BadRequestException(
+              'La subetapa no está abierta o no pertenece a la etapa indicada.',
+            );
+          }
+        }
         const folder = await tx.digitalFolder.create({
           data: {
             name,
@@ -114,12 +147,24 @@ export class FolderService {
         },
         select: {
           id: true,
+          stage: {
+            select: {
+              status: true,
+            },
+          },
+          substage: {
+            select: {
+              status: true,
+            },
+          },
         },
       });
 
       if (!folder) {
         throw new NotFoundException('Folder no encontrado');
       }
+
+      this.validateContainerIsOpened(folder);
 
       return await this.prisma.$transaction(async (tx) => {
         const updatedFolder = await tx.digitalFolder.update({
@@ -178,9 +223,9 @@ export class FolderService {
         },
         select: {
           id: true,
-
           stage: {
             select: {
+              status: true,
               process: {
                 select: {
                   managedByID: true,
@@ -188,7 +233,11 @@ export class FolderService {
               },
             },
           },
-
+          substage: {
+            select: {
+              status: true,
+            },
+          },
           digitalFiles: {
             where: {
               deletedAt: null,
@@ -204,6 +253,8 @@ export class FolderService {
       if (!folder) {
         throw new NotFoundException('Carpeta no encontrada');
       }
+
+      this.validateContainerIsOpened(folder);
 
       //! todo: review this rules
       const isAdmin = user.roles.includes(ValidRoles.admin);
@@ -356,12 +407,24 @@ export class FolderService {
         },
         select: {
           id: true,
+          stage: {
+            select: {
+              status: true,
+            },
+          },
+          substage: {
+            select: {
+              status: true,
+            },
+          },
         },
       });
 
       if (!folder) {
         throw new NotFoundException('Folder not found');
       }
+
+      this.validateContainerIsOpened(folder);
 
       const fileId = randomUUID();
 
@@ -417,6 +480,50 @@ export class FolderService {
       }
 
       throw new InternalServerErrorException('Error uploading digital file');
+    }
+  }
+
+  async updateFile(
+    user: User,
+    fileId: string,
+    updateDigitalFileDto: UpdateDigitalFileDto,
+  ) {
+    try {
+      const { digitalFile } = await this.getAccessibleFile(user, fileId);
+
+      this.validateContainerIsOpened(digitalFile.digitalFolder);
+
+      const { name, description } = updateDigitalFileDto;
+
+      return await this.prisma.$transaction(async (tx) => {
+        const updatedFile = await tx.digitalFile.update({
+          where: {
+            id: digitalFile.id,
+          },
+          data: {
+            name,
+            description,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+          action: LogActions.file.update,
+          entity: LogEntities.file,
+          affected: digitalFile.id,
+          description: 'Actualización de nombre y descripción del archivo',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return updatedFile;
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.handleDBErrors(error);
     }
   }
 
@@ -497,6 +604,21 @@ export class FolderService {
           createdAt: true,
           storagePath: true,
           digitalFolderId: true,
+          digitalFolder: {
+            select: {
+              stage: {
+                select: {
+                  status: true,
+                },
+              },
+
+              substage: {
+                select: {
+                  status: true,
+                },
+              },
+            },
+          },
         },
       });
 
@@ -509,6 +631,8 @@ export class FolderService {
           'El archivo no tiene una ubicación física registrada',
         );
       }
+
+      this.validateContainerIsOpened(digitalFile.digitalFolder);
 
       const now = new Date();
 
@@ -706,11 +830,19 @@ export class FolderService {
           select: {
             stage: {
               select: {
+                status: true,
+
                 process: {
                   select: {
                     managedByID: true,
                   },
                 },
+              },
+            },
+
+            substage: {
+              select: {
+                status: true,
               },
             },
           },
@@ -766,48 +898,6 @@ export class FolderService {
     };
   }
 
-  async updateFile(
-    user: User,
-    fileId: string,
-    updateDigitalFileDto: UpdateDigitalFileDto,
-  ) {
-    try {
-      const { digitalFile } = await this.getAccessibleFile(user, fileId);
-
-      const { name, description } = updateDigitalFileDto;
-
-      return await this.prisma.$transaction(async (tx) => {
-        const updatedFile = await tx.digitalFile.update({
-          where: {
-            id: digitalFile.id,
-          },
-          data: {
-            name,
-            description,
-          },
-        });
-
-        const dataLog: CreateLog = {
-          userId: user.id,
-          action: LogActions.file.update,
-          entity: LogEntities.file,
-          affected: digitalFile.id,
-          description: 'Actualización de nombre y descripción del archivo',
-        };
-
-        await this.logsService.create(dataLog, tx);
-
-        return updatedFile;
-      });
-    } catch (error: unknown) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      this.handleDBErrors(error);
-    }
-  }
-
   private getFilesRoot(): string {
     return path.resolve(
       this.configService.get<string>('FILES_DIR') ??
@@ -825,6 +915,33 @@ export class FolderService {
     }
 
     return absolutePath;
+  }
+
+  private validateContainerIsOpened(
+    folder: {
+      stage: {
+        status: string;
+      };
+      substage: {
+        status: string;
+      } | null;
+    } | null,
+  ) {
+    if (!folder) {
+      throw new NotFoundException('Carpeta no encontrada');
+    }
+
+    if (folder.stage.status !== 'opened') {
+      throw new BadRequestException(
+        'La etapa está cerrada y no puede modificarse.',
+      );
+    }
+
+    if (folder.substage && folder.substage.status !== 'opened') {
+      throw new BadRequestException(
+        'La subetapa está cerrada y no puede modificarse.',
+      );
+    }
   }
 
   private handleDBErrors(error): never {

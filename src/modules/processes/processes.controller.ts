@@ -146,12 +146,19 @@ export class ProcessesController {
   @Patch('substage/:substageId/close')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   closeSubstage(
-    @GetUser('id')
-    userId: string,
-
-    @Param('substageId', ParseUUIDPipe)
-    substageId: string,
+    @GetUser('id') userId: string,
+    @Param('substageId', ParseUUIDPipe) substageId: string,
   ) {
     return this.processesService.closeSubstage(substageId, userId);
+  }
+
+  //* CLOSE STAGE
+  @Patch('stage/:stageId/close')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  closeStage(
+    @GetUser('id') userId: string,
+    @Param('stageId', ParseUUIDPipe) stageId: string,
+  ) {
+    return this.processesService.closeStage(stageId, userId);
   }
 }
