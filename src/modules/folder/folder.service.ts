@@ -21,7 +21,7 @@ import {
 } from './dto';
 
 import { CreateLog } from '../logs/interfaces';
-import { LogActions, LogEntities } from 'src/common';
+import { lockStage, LogActions, LogEntities } from 'src/common';
 import { type User, ValidRoles } from '../auth/interfaces';
 import { createReadStream, ReadStream } from 'fs';
 
@@ -41,6 +41,8 @@ export class FolderService {
     try {
       const { name, description, substageId } = createFolderDto;
       return await this.prisma.$transaction(async (tx) => {
+        await lockStage(tx, stageId);
+
         const stage = await tx.processStage.findFirst({
           where: {
             id: stageId,
@@ -216,159 +218,183 @@ export class FolderService {
     try {
       const { reason } = deactivateFolderDto;
 
-      const folder = await this.prisma.digitalFolder.findFirst({
+      const target = await this.prisma.digitalFolder.findFirst({
         where: {
           id: folderId,
           deletedAt: null,
         },
+
         select: {
-          id: true,
-          stage: {
-            select: {
-              status: true,
-              process: {
-                select: {
-                  managedByID: true,
-                },
-              },
-            },
-          },
-          substage: {
-            select: {
-              status: true,
-            },
-          },
-          digitalFiles: {
+          stageId: true,
+        },
+      });
+
+      if (!target) {
+        throw new NotFoundException('Carpeta no encontrada');
+      }
+
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          await lockStage(tx, target.stageId);
+
+          const folder = await tx.digitalFolder.findFirst({
             where: {
+              id: folderId,
               deletedAt: null,
             },
             select: {
               id: true,
-              storagePath: true,
+              stage: {
+                select: {
+                  status: true,
+                  process: {
+                    select: {
+                      managedByID: true,
+                    },
+                  },
+                },
+              },
+              substage: {
+                select: {
+                  status: true,
+                },
+              },
+              digitalFiles: {
+                where: {
+                  deletedAt: null,
+                },
+                select: {
+                  id: true,
+                  storagePath: true,
+                },
+              },
             },
-          },
-        },
-      });
+          });
 
-      if (!folder) {
-        throw new NotFoundException('Carpeta no encontrada');
-      }
-
-      this.validateContainerIsOpened(folder);
-
-      //! todo: review this rules
-      const isAdmin = user.roles.includes(ValidRoles.admin);
-
-      const isLawyer = user.roles.includes(ValidRoles.lawyer);
-
-      const lawyerHasAccess =
-        isLawyer && folder.stage.process.managedByID === user.id;
-
-      if (!isAdmin && !lawyerHasAccess) {
-        throw new NotFoundException('Carpeta no encontrada');
-      }
-
-      const now = new Date();
-
-      const filesRoot = this.getFilesRoot();
-
-      if (folder.digitalFiles.length > 0) {
-        const deletedDirectory = path.join(
-          filesRoot,
-          'digital-files',
-          'deleted',
-          folderId,
-        );
-
-        await mkdir(deletedDirectory, {
-          recursive: true,
-        });
-
-        for (const file of folder.digitalFiles) {
-          if (!file.storagePath) {
-            throw new InternalServerErrorException(
-              'Uno de los archivos no tiene una ubicación física registrada',
-            );
+          if (!folder) {
+            throw new NotFoundException('Carpeta no encontrada');
           }
 
-          const originalAbsolutePath = this.resolveStoragePath(
-            filesRoot,
-            file.storagePath,
-          );
+          //! todo: review this rules
+          const isAdmin = user.roles.includes(ValidRoles.admin);
 
-          const deletedStoragePath = path.posix.join(
-            'digital-files',
-            'deleted',
-            folderId,
-            `${file.id}.pdf`,
-          );
+          const isLawyer = user.roles.includes(ValidRoles.lawyer);
 
-          const deletedAbsolutePath = this.resolveStoragePath(
-            filesRoot,
-            deletedStoragePath,
-          );
+          const lawyerHasAccess =
+            isLawyer && folder.stage.process.managedByID === user.id;
 
-          await rename(originalAbsolutePath, deletedAbsolutePath);
+          if (!isAdmin && !lawyerHasAccess) {
+            throw new NotFoundException('Carpeta no encontrada');
+          }
 
-          movedFiles.push({
-            id: file.id,
-            originalAbsolutePath,
-            deletedAbsolutePath,
-            deletedStoragePath,
-          });
-        }
-      }
+          this.validateContainerIsOpened(folder);
 
-      await this.prisma.$transaction(async (tx) => {
-        await tx.digitalFolder.update({
-          where: {
-            id: folderId,
-          },
-          data: {
-            deletedAt: now,
-          },
-        });
+          const now = new Date();
 
-        for (const file of movedFiles) {
-          await tx.digitalFile.update({
+          const filesRoot = this.getFilesRoot();
+
+          if (folder.digitalFiles.length > 0) {
+            const deletedDirectory = path.join(
+              filesRoot,
+              'digital-files',
+              'deleted',
+              folderId,
+            );
+
+            await mkdir(deletedDirectory, {
+              recursive: true,
+            });
+
+            for (const file of folder.digitalFiles) {
+              if (!file.storagePath) {
+                throw new InternalServerErrorException(
+                  'Uno de los archivos no tiene una ubicación física registrada',
+                );
+              }
+
+              const originalAbsolutePath = this.resolveStoragePath(
+                filesRoot,
+                file.storagePath,
+              );
+
+              const deletedStoragePath = path.posix.join(
+                'digital-files',
+                'deleted',
+                folderId,
+                `${file.id}.pdf`,
+              );
+
+              const deletedAbsolutePath = this.resolveStoragePath(
+                filesRoot,
+                deletedStoragePath,
+              );
+
+              await rename(originalAbsolutePath, deletedAbsolutePath);
+
+              movedFiles.push({
+                id: file.id,
+                originalAbsolutePath,
+                deletedAbsolutePath,
+                deletedStoragePath,
+              });
+            }
+          }
+
+          await tx.digitalFolder.update({
             where: {
-              id: file.id,
+              id: folderId,
             },
             data: {
               deletedAt: now,
-              storagePath: file.deletedStoragePath,
             },
           });
 
-          const fileLog: CreateLog = {
+          for (const file of movedFiles) {
+            await tx.digitalFile.update({
+              where: {
+                id: file.id,
+              },
+              data: {
+                deletedAt: now,
+                storagePath: file.deletedStoragePath,
+              },
+            });
+
+            const fileLog: CreateLog = {
+              userId: user.id,
+              action: LogActions.file.deactivate,
+              entity: LogEntities.file,
+              affected: file.id,
+              description: reason,
+            };
+
+            await this.logsService.create(fileLog, tx);
+          }
+
+          const folderLog: CreateLog = {
             userId: user.id,
-            action: LogActions.file.deactivate,
-            entity: LogEntities.file,
-            affected: file.id,
+            action: LogActions.folder.deactivate,
+            entity: LogEntities.folder,
+            affected: folderId,
             description: reason,
           };
 
-          await this.logsService.create(fileLog, tx);
-        }
+          await this.logsService.create(folderLog, tx);
 
-        const folderLog: CreateLog = {
-          userId: user.id,
-          action: LogActions.folder.deactivate,
-          entity: LogEntities.folder,
-          affected: folderId,
-          description: reason,
-        };
-
-        await this.logsService.create(folderLog, tx);
-      });
+          return {
+            id: folderId,
+            deletedAt: now,
+            filesAffected: movedFiles.length,
+          };
+        },
+        {
+          timeout: 15000,
+        },
+      );
 
       databaseUpdated = true;
 
-      return {
-        id: folderId,
-        deletedAt: now,
-        filesAffected: movedFiles.length,
-      };
+      return result;
     } catch (error: unknown) {
       if (!databaseUpdated && movedFiles.length > 0) {
         for (const file of [...movedFiles].reverse()) {
@@ -400,43 +426,60 @@ export class FolderService {
     let savedAbsolutePath: string | undefined;
     const { name, description } = createDigitalFileDto;
     try {
-      const folder = await this.prisma.digitalFolder.findFirst({
+      const target = await this.prisma.digitalFolder.findFirst({
         where: {
           id: folderId,
           deletedAt: null,
         },
+
         select: {
-          id: true,
-          stage: {
-            select: {
-              status: true,
-            },
-          },
-          substage: {
-            select: {
-              status: true,
-            },
-          },
+          stageId: true,
         },
       });
 
-      if (!folder) {
+      if (!target) {
         throw new NotFoundException('Folder not found');
       }
 
-      this.validateContainerIsOpened(folder);
-
       const fileId = randomUUID();
 
-      const { storagePath, absolutePath } = await this.savePdf(
-        folderId,
-        fileId,
-        file.buffer,
-      );
-
-      savedAbsolutePath = absolutePath;
-
       return await this.prisma.$transaction(async (tx) => {
+        await lockStage(tx, target.stageId);
+
+        const folder = await this.prisma.digitalFolder.findFirst({
+          where: {
+            id: folderId,
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            stage: {
+              select: {
+                status: true,
+              },
+            },
+            substage: {
+              select: {
+                status: true,
+              },
+            },
+          },
+        });
+
+        if (!folder) {
+          throw new NotFoundException('Folder not found');
+        }
+
+        this.validateContainerIsOpened(folder);
+
+        const { storagePath, absolutePath } = await this.savePdf(
+          folderId,
+          fileId,
+          file.buffer,
+        );
+
+        savedAbsolutePath = absolutePath;
+
         const digitalFile = await tx.digitalFile.create({
           data: {
             id: fileId,
@@ -593,164 +636,193 @@ export class FolderService {
     let databaseUpdated = false;
 
     try {
-      const digitalFile = await this.prisma.digitalFile.findFirst({
+      const target = await this.prisma.digitalFile.findFirst({
         where: {
           id: fileId,
           deletedAt: null,
         },
+
         select: {
-          id: true,
-          name: true,
-          createdAt: true,
-          storagePath: true,
-          digitalFolderId: true,
           digitalFolder: {
             select: {
-              stage: {
-                select: {
-                  status: true,
-                },
-              },
-
-              substage: {
-                select: {
-                  status: true,
-                },
-              },
+              stageId: true,
             },
           },
         },
       });
 
-      if (!digitalFile) {
+      if (!target || !target.digitalFolder) {
         throw new NotFoundException('Archivo no encontrado');
       }
 
-      if (!digitalFile.storagePath) {
-        throw new InternalServerErrorException(
-          'El archivo no tiene una ubicación física registrada',
-        );
-      }
+      const stageId = target.digitalFolder.stageId;
 
-      this.validateContainerIsOpened(digitalFile.digitalFolder);
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          await lockStage(tx, stageId);
 
-      const now = new Date();
+          const digitalFile = await tx.digitalFile.findFirst({
+            where: {
+              id: fileId,
+              deletedAt: null,
+            },
+            select: {
+              id: true,
+              name: true,
+              createdAt: true,
+              storagePath: true,
+              digitalFolderId: true,
+              digitalFolder: {
+                select: {
+                  stage: {
+                    select: {
+                      status: true,
+                    },
+                  },
 
-      const twentyFourHours = 24 * 60 * 60 * 1000;
+                  substage: {
+                    select: {
+                      status: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
 
-      const fileAge = now.getTime() - digitalFile.createdAt.getTime();
+          if (!digitalFile) {
+            throw new NotFoundException('Archivo no encontrado');
+          }
 
-      const hardDelete = fileAge < twentyFourHours;
+          if (!digitalFile.storagePath) {
+            throw new InternalServerErrorException(
+              'El archivo no tiene una ubicación física registrada',
+            );
+          }
 
-      const filesRoot = this.getFilesRoot();
+          this.validateContainerIsOpened(digitalFile.digitalFolder);
 
-      originalAbsolutePath = this.resolveStoragePath(
-        filesRoot,
-        digitalFile.storagePath,
-      );
+          const now = new Date();
 
-      if (hardDelete) {
-        const deletingDirectory = path.join(
-          filesRoot,
-          'digital-files',
-          '.deleting',
-        );
+          const twentyFourHours = 24 * 60 * 60 * 1000;
 
-        await mkdir(deletingDirectory, {
-          recursive: true,
-        });
+          const fileAge = now.getTime() - digitalFile.createdAt.getTime();
 
-        movedAbsolutePath = path.join(
-          deletingDirectory,
-          `${fileId}-${randomUUID()}.pdf`,
-        );
+          const hardDelete = fileAge < twentyFourHours;
 
-        await rename(originalAbsolutePath, movedAbsolutePath);
+          const filesRoot = this.getFilesRoot();
 
-        await this.prisma.$transaction(async (tx) => {
+          originalAbsolutePath = this.resolveStoragePath(
+            filesRoot,
+            digitalFile.storagePath,
+          );
+
+          if (hardDelete) {
+            const deletingDirectory = path.join(
+              filesRoot,
+              'digital-files',
+              '.deleting',
+            );
+
+            await mkdir(deletingDirectory, {
+              recursive: true,
+            });
+
+            movedAbsolutePath = path.join(
+              deletingDirectory,
+              `${fileId}-${randomUUID()}.pdf`,
+            );
+
+            await rename(originalAbsolutePath, movedAbsolutePath);
+
+            await tx.digitalFile.update({
+              where: {
+                id: fileId,
+              },
+              data: {
+                deletedAt: now,
+                storagePath: null,
+              },
+            });
+
+            const dataLog: CreateLog = {
+              userId,
+              action: LogActions.file.delete,
+              entity: LogEntities.file,
+              affected: fileId,
+              description:
+                'Archivo eliminado físicamente antes de cumplir 24 horas',
+            };
+
+            await this.logsService.create(dataLog, tx);
+
+            databaseUpdated = true;
+            await unlink(movedAbsolutePath);
+
+            return {
+              id: fileId,
+              deletedAt: now,
+              physicallyDeleted: true,
+            };
+          }
+
+          const deletedStoragePath = path.posix.join(
+            'digital-files',
+            'deleted',
+            digitalFile.digitalFolderId,
+            `${fileId}.pdf`,
+          );
+
+          const deletedDirectory = path.join(
+            filesRoot,
+            'digital-files',
+            'deleted',
+            digitalFile.digitalFolderId,
+          );
+
+          await mkdir(deletedDirectory, {
+            recursive: true,
+          });
+
+          movedAbsolutePath = path.join(deletedDirectory, `${fileId}.pdf`);
+
+          await rename(originalAbsolutePath, movedAbsolutePath);
+
           await tx.digitalFile.update({
             where: {
               id: fileId,
             },
             data: {
               deletedAt: now,
-              storagePath: null,
+              storagePath: deletedStoragePath,
             },
           });
 
           const dataLog: CreateLog = {
             userId,
-            action: LogActions.file.delete,
+            action: LogActions.file.deactivate,
             entity: LogEntities.file,
             affected: fileId,
-            description:
-              'Archivo eliminado físicamente antes de cumplir 24 horas',
+            description: 'Archivo movido al almacenamiento de eliminados',
           };
 
           await this.logsService.create(dataLog, tx);
-        });
 
-        databaseUpdated = true;
-        await unlink(movedAbsolutePath);
-
-        return {
-          id: fileId,
-          deletedAt: now,
-          physicallyDeleted: true,
-        };
-      }
-
-      const deletedStoragePath = path.posix.join(
-        'digital-files',
-        'deleted',
-        digitalFile.digitalFolderId,
-        `${fileId}.pdf`,
-      );
-
-      const deletedDirectory = path.join(
-        filesRoot,
-        'digital-files',
-        'deleted',
-        digitalFile.digitalFolderId,
-      );
-
-      await mkdir(deletedDirectory, {
-        recursive: true,
-      });
-
-      movedAbsolutePath = path.join(deletedDirectory, `${fileId}.pdf`);
-
-      await rename(originalAbsolutePath, movedAbsolutePath);
-
-      await this.prisma.$transaction(async (tx) => {
-        await tx.digitalFile.update({
-          where: {
+          return {
             id: fileId,
-          },
-          data: {
             deletedAt: now,
-            storagePath: deletedStoragePath,
-          },
-        });
-
-        const dataLog: CreateLog = {
-          userId,
-          action: LogActions.file.deactivate,
-          entity: LogEntities.file,
-          affected: fileId,
-          description: 'Archivo movido al almacenamiento de eliminados',
-        };
-
-        await this.logsService.create(dataLog, tx);
-      });
-
+            physicallyDeleted: false,
+          };
+        },
+        { timeout: 15000 },
+      );
       databaseUpdated = true;
 
-      return {
-        id: fileId,
-        deletedAt: now,
-        physicallyDeleted: false,
-      };
+      if (result.physicallyDeleted && movedAbsolutePath) {
+        await unlink(movedAbsolutePath).catch(() => undefined);
+      }
+
+      return result;
     } catch (error: unknown) {
       if (!databaseUpdated && originalAbsolutePath && movedAbsolutePath) {
         await rename(movedAbsolutePath, originalAbsolutePath).catch(

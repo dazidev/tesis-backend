@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -11,7 +13,7 @@ import {
   ProcessDto,
 } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
-import { buildTree, LogActions, LogEntities } from 'src/common';
+import { buildTree, LogActions, LogEntities, lockStage } from 'src/common';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
 import { DeactivateSubstageDto } from './dto/deactivate-substage.dto';
@@ -302,7 +304,7 @@ export class ProcessesService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await this.lockStage(tx, stageId);
+        await lockStage(tx, stageId);
 
         const stage = await tx.processStage.findUnique({
           where: {
@@ -435,6 +437,21 @@ export class ProcessesService {
       const { reason } = deactivateSubstageDto;
 
       return await this.prisma.$transaction(async (tx) => {
+        const target = await tx.processSubstage.findUnique({
+          where: {
+            id: substageId,
+          },
+          select: {
+            stageId: true,
+          },
+        });
+
+        if (!target) {
+          throw new BadRequestException('La subetapa no fue encontrada.');
+        }
+
+        await lockStage(tx, target.stageId);
+
         const subStage = await tx.processSubstage.findFirst({
           where: {
             id: substageId,
@@ -458,8 +475,6 @@ export class ProcessesService {
             'Una subetapa cerrada no puede eliminarse.',
           );
         }
-
-        await this.lockStage(tx, subStage.stageId);
 
         const substages = await tx.processSubstage.findMany({
           where: {
@@ -685,6 +700,21 @@ export class ProcessesService {
   async closeSubstage(substageId: string, userId: string) {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const target = await tx.processSubstage.findUnique({
+          where: {
+            id: substageId,
+          },
+          select: {
+            stageId: true,
+          },
+        });
+
+        if (!target) {
+          throw new BadRequestException('La subetapa no fue encontrada.');
+        }
+
+        await lockStage(tx, target.stageId);
+
         const substage = await tx.processSubstage.findFirst({
           where: {
             id: substageId,
@@ -720,8 +750,6 @@ export class ProcessesService {
         if (!substage) {
           throw new Error('The substage was not found');
         }
-
-        await this.lockStage(tx, substage.stageId);
 
         if (substage.status === 'closed') {
           return {
@@ -775,8 +803,8 @@ export class ProcessesService {
 
   async closeStage(stageId: string, userId: string) {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.lockStage(tx, stageId);
+      const result = await this.prisma.$transaction(async (tx) => {
+        await lockStage(tx, stageId);
 
         const stage = await tx.processStage.findFirst({
           where: {
@@ -785,18 +813,22 @@ export class ProcessesService {
               not: 'deleted',
             },
           },
+
           select: {
             id: true,
             status: true,
             openSubstages: true,
+
             digitalFolders: {
               where: {
                 deletedAt: null,
                 substageId: null,
               },
+
               select: {
                 id: true,
                 name: true,
+
                 _count: {
                   select: {
                     digitalFiles: {
@@ -812,18 +844,25 @@ export class ProcessesService {
         });
 
         if (!stage) {
-          throw new Error('The stage was not found');
+          throw new NotFoundException('La etapa no fue encontrada.');
         }
 
         if (stage.status === 'closed') {
           return {
-            id: stage.id,
-            status: stage.status,
+            canClose: true as const,
+
+            data: {
+              id: stage.id,
+              status: stage.status,
+              openSubstages: stage.openSubstages,
+            },
           };
         }
 
         if (stage.status !== 'opened') {
-          throw new Error('La etapa debe estar abierta para poder cerrarse.');
+          throw new BadRequestException(
+            'La etapa debe estar abierta para poder cerrarse.',
+          );
         }
 
         const realOpenSubstages = await tx.processSubstage.count({
@@ -846,11 +885,13 @@ export class ProcessesService {
         }
 
         if (realOpenSubstages > 0) {
-          throw new Error(
-            `La etapa tiene ${realOpenSubstages} subetapa${
+          return {
+            canClose: false as const,
+
+            reason: `La etapa tiene ${realOpenSubstages} subetapa${
               realOpenSubstages === 1 ? '' : 's'
             } abierta${realOpenSubstages === 1 ? '' : 's'}.`,
-          );
+          };
         }
 
         const emptyFolder = stage.digitalFolders.find(
@@ -858,19 +899,23 @@ export class ProcessesService {
         );
 
         if (emptyFolder) {
-          throw new Error(
-            `La carpeta "${emptyFolder.name}" no contiene documentos.`,
-          );
+          return {
+            canClose: false as const,
+
+            reason: `La carpeta "${emptyFolder.name}" no contiene documentos.`,
+          };
         }
 
         const updatedStage = await tx.processStage.update({
           where: {
             id: stageId,
           },
+
           data: {
             status: 'closed',
             openSubstages: 0,
           },
+
           select: {
             id: true,
             status: true,
@@ -880,17 +925,33 @@ export class ProcessesService {
 
         const dataLog: CreateLog = {
           userId,
+
           action: LogActions.process.stage.close,
+
           entity: LogEntities.stage,
+
           affected: stage.id,
+
           description: '',
         };
 
         await this.logsService.create(dataLog, tx);
 
-        return updatedStage;
+        return {
+          canClose: true as const,
+          data: updatedStage,
+        };
       });
+
+      if (!result.canClose) {
+        throw new BadRequestException(result.reason);
+      }
+      return result.data;
     } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.handleDBErrors(error);
     }
   }
@@ -916,19 +977,6 @@ export class ProcessesService {
     });
 
     return openSubstages;
-  }
-
-  private async lockStage(tx: Prisma.TransactionClient, stageId: string) {
-    const stage = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id
-      FROM "process_stages"
-      WHERE id = ${stageId}
-      FOR UPDATE
-    `;
-
-    if (stage.length === 0) {
-      throw new Error('The stage was not found');
-    }
   }
 
   private getSubstageTreeIds(
