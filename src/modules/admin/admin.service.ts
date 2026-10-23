@@ -54,6 +54,7 @@ export class AdminService {
 
         const dataLog: CreateLog = {
           userId,
+          entity: LogEntities.user,
           action: LogActions.common.invitationUser,
           affected: toEmail,
           description: `Rol: ${role}`,
