@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from 'src/generated/prisma/client';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
-import { LogActions, LogEntities } from 'src/common';
+import { lockStage, LogActions, LogEntities } from 'src/common';
 import { type User, ValidRoles } from '../auth/interfaces';
 import {
   CreateTaskDto,
@@ -29,56 +29,6 @@ export class TaskService {
     try {
       const { description, dueDate, substageId } = createTaskDto;
 
-      const stage = await this.prisma.processStage.findFirst({
-        where: {
-          id: stageId,
-          status: 'opened',
-        },
-        select: {
-          id: true,
-          process: {
-            select: {
-              managedByID: true,
-            },
-          },
-        },
-      });
-
-      if (!stage) {
-        throw new NotFoundException('Etapa no encontrada');
-      }
-
-      //! todo: review that validation
-
-      const isAdmin = user.roles.includes(ValidRoles.admin);
-
-      const isLawyer = user.roles.includes(ValidRoles.lawyer);
-
-      const lawyerHasAccess = isLawyer && stage.process.managedByID === user.id;
-
-      if (!isAdmin && !lawyerHasAccess) {
-        throw new NotFoundException('Etapa no encontrada');
-      }
-
-      if (substageId) {
-        const substage = await this.prisma.processSubstage.findFirst({
-          where: {
-            id: substageId,
-            stageId,
-            status: 'opened',
-          },
-          select: {
-            id: true,
-          },
-        });
-
-        if (!substage) {
-          throw new BadRequestException(
-            'La subetapa no pertenece a la etapa indicada o no está disponible',
-          );
-        }
-      }
-
       const parsedDueDate = new Date(dueDate);
 
       if (parsedDueDate.getTime() <= Date.now()) {
@@ -88,6 +38,62 @@ export class TaskService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
+        await lockStage(tx, stageId);
+
+        const stage = await tx.processStage.findFirst({
+          where: {
+            id: stageId,
+            status: 'opened',
+          },
+
+          select: {
+            id: true,
+
+            process: {
+              select: {
+                managedByID: true,
+              },
+            },
+          },
+        });
+
+        if (!stage) {
+          throw new NotFoundException('Etapa no encontrada');
+        }
+
+        //! todo: review that validation
+
+        const isAdmin = user.roles.includes(ValidRoles.admin);
+
+        const isLawyer = user.roles.includes(ValidRoles.lawyer);
+
+        const lawyerHasAccess =
+          isLawyer && stage.process.managedByID === user.id;
+
+        if (!isAdmin && !lawyerHasAccess) {
+          throw new NotFoundException('Etapa no encontrada');
+        }
+
+        if (substageId) {
+          const substage = await tx.processSubstage.findFirst({
+            where: {
+              id: substageId,
+              stageId,
+              status: 'opened',
+            },
+
+            select: {
+              id: true,
+            },
+          });
+
+          if (!substage) {
+            throw new BadRequestException(
+              'La subetapa no pertenece a la etapa indicada o no está disponible',
+            );
+          }
+        }
+
         const task = await tx.task.create({
           data: {
             description,
@@ -133,21 +139,38 @@ export class TaskService {
     updateTaskCompletionDto: UpdateTaskCompletionDto,
   ) {
     try {
-      const task = await this.getAccessibleTask(user, taskId);
+      const target = await this.prisma.task.findFirst({
+        where: {
+          id: taskId,
+          deletedAt: null,
+        },
 
-      this.validateTaskContainerIsOpened(task);
+        select: {
+          stageId: true,
+        },
+      });
 
-      const { completed } = updateTaskCompletionDto;
-
-      if (completed && task.completedAt) {
-        return task;
-      }
-
-      if (!completed && !task.completedAt) {
-        return task;
+      if (!target) {
+        throw new NotFoundException('Tarea no encontrada');
       }
 
       return await this.prisma.$transaction(async (tx) => {
+        await lockStage(tx, target.stageId);
+
+        const task = await this.getAccessibleTask(user, taskId, tx);
+
+        this.validateTaskContainerIsOpened(task);
+
+        const { completed } = updateTaskCompletionDto;
+
+        if (completed && task.completedAt) {
+          return task;
+        }
+
+        if (!completed && !task.completedAt) {
+          return task;
+        }
+
         const updatedTask = await tx.task.update({
           where: {
             id: task.id,
@@ -185,25 +208,46 @@ export class TaskService {
 
   async updateTask(user: User, taskId: string, updateTaskDto: UpdateTaskDto) {
     try {
-      const task = await this.getAccessibleTask(user, taskId);
-      this.validateTaskContainerIsOpened(task);
-      const { description, dueDate } = updateTaskDto;
-      const parsedDueDate = new Date(dueDate);
+      const target = await this.prisma.task.findFirst({
+        where: {
+          id: taskId,
+          deletedAt: null,
+        },
 
-      if (
-        parsedDueDate.getTime() <= Date.now() &&
-        parsedDueDate.getTime() !== task.dueDate.getTime()
-      ) {
-        throw new BadRequestException(
-          'La nueva fecha límite debe ser posterior a la fecha actual',
-        );
+        select: {
+          stageId: true,
+        },
+      });
+
+      if (!target) {
+        throw new NotFoundException('Tarea no encontrada');
       }
 
+      const { description, dueDate } = updateTaskDto;
+
+      const parsedDueDate = new Date(dueDate);
+
       return await this.prisma.$transaction(async (tx) => {
+        await lockStage(tx, target.stageId);
+
+        const task = await this.getAccessibleTask(user, taskId, tx);
+
+        this.validateTaskContainerIsOpened(task);
+
+        if (
+          parsedDueDate.getTime() <= Date.now() &&
+          parsedDueDate.getTime() !== task.dueDate.getTime()
+        ) {
+          throw new BadRequestException(
+            'La nueva fecha límite debe ser posterior a la fecha actual',
+          );
+        }
+
         const updatedTask = await tx.task.update({
           where: {
             id: task.id,
           },
+
           data: {
             description,
             dueDate: parsedDueDate,
@@ -212,9 +256,13 @@ export class TaskService {
 
         const dataLog: CreateLog = {
           userId: user.id,
+
           action: LogActions.task.update,
+
           entity: LogEntities.task,
+
           affected: task.id,
+
           description: '',
         };
 
@@ -237,11 +285,30 @@ export class TaskService {
     deactivateTaskDto: DeactivateTaskDto,
   ) {
     try {
-      const task = await this.getAccessibleTask(user, taskId);
-      this.validateTaskContainerIsOpened(task);
+      const target = await this.prisma.task.findFirst({
+        where: {
+          id: taskId,
+          deletedAt: null,
+        },
+
+        select: {
+          stageId: true,
+        },
+      });
+
+      if (!target) {
+        throw new NotFoundException('Tarea no encontrada');
+      }
+
       const { reason } = deactivateTaskDto;
 
       return await this.prisma.$transaction(async (tx) => {
+        await lockStage(tx, target.stageId);
+
+        const task = await this.getAccessibleTask(user, taskId, tx);
+
+        this.validateTaskContainerIsOpened(task);
+
         const deletedTask = await tx.task.update({
           where: {
             id: task.id,
@@ -254,9 +321,13 @@ export class TaskService {
 
         const dataLog: CreateLog = {
           userId: user.id,
+
           action: LogActions.task.deactivate,
+
           entity: LogEntities.task,
+
           affected: task.id,
+
           description: reason,
         };
 
@@ -273,12 +344,19 @@ export class TaskService {
     }
   }
 
-  private async getAccessibleTask(user: User, taskId: string) {
-    const task = await this.prisma.task.findFirst({
+  private async getAccessibleTask(
+    user: User,
+    taskId: string,
+    tx?: Prisma.TransactionClient,
+  ) {
+    const db = tx ?? this.prisma;
+
+    const task = await db.task.findFirst({
       where: {
         id: taskId,
         deletedAt: null,
       },
+
       select: {
         id: true,
         description: true,
@@ -290,9 +368,11 @@ export class TaskService {
         createdById: true,
         stageId: true,
         substageId: true,
+
         stage: {
           select: {
             status: true,
+
             process: {
               select: {
                 managedByID: true,
@@ -300,6 +380,7 @@ export class TaskService {
             },
           },
         },
+
         substage: {
           select: {
             status: true,
