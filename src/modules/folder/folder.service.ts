@@ -142,37 +142,58 @@ export class FolderService {
     try {
       const { name, description } = updateFolderDto;
 
-      const folder = await this.prisma.digitalFolder.findFirst({
+      const target = await this.prisma.digitalFolder.findFirst({
         where: {
           id: folderId,
           deletedAt: null,
         },
+
         select: {
-          id: true,
-          stage: {
-            select: {
-              status: true,
-            },
-          },
-          substage: {
-            select: {
-              status: true,
-            },
-          },
+          stageId: true,
         },
       });
 
-      if (!folder) {
+      if (!target) {
         throw new NotFoundException('Folder no encontrado');
       }
 
-      this.validateContainerIsOpened(folder);
-
       return await this.prisma.$transaction(async (tx) => {
+        await lockStage(tx, target.stageId);
+
+        const folder = await tx.digitalFolder.findFirst({
+          where: {
+            id: folderId,
+            deletedAt: null,
+          },
+
+          select: {
+            id: true,
+
+            stage: {
+              select: {
+                status: true,
+              },
+            },
+
+            substage: {
+              select: {
+                status: true,
+              },
+            },
+          },
+        });
+
+        if (!folder) {
+          throw new NotFoundException('Folder no encontrado');
+        }
+
+        this.validateContainerIsOpened(folder);
+
         const updatedFolder = await tx.digitalFolder.update({
           where: {
             id: folderId,
           },
+
           data: {
             name,
             description,
@@ -181,9 +202,13 @@ export class FolderService {
 
         const dataLog: CreateLog = {
           userId,
+
           action: LogActions.folder.update,
+
           entity: LogEntities.folder,
+
           affected: updatedFolder.id,
+
           description:
             'Actualización de nombre y descripción de la carpeta digital',
         };
@@ -443,72 +468,75 @@ export class FolderService {
 
       const fileId = randomUUID();
 
-      return await this.prisma.$transaction(async (tx) => {
-        await lockStage(tx, target.stageId);
+      return await this.prisma.$transaction(
+        async (tx) => {
+          await lockStage(tx, target.stageId);
 
-        const folder = await this.prisma.digitalFolder.findFirst({
-          where: {
-            id: folderId,
-            deletedAt: null,
-          },
-          select: {
-            id: true,
-            stage: {
-              select: {
-                status: true,
+          const folder = await tx.digitalFolder.findFirst({
+            where: {
+              id: folderId,
+              deletedAt: null,
+            },
+            select: {
+              id: true,
+              stage: {
+                select: {
+                  status: true,
+                },
+              },
+              substage: {
+                select: {
+                  status: true,
+                },
               },
             },
-            substage: {
-              select: {
-                status: true,
-              },
+          });
+
+          if (!folder) {
+            throw new NotFoundException('Folder not found');
+          }
+
+          this.validateContainerIsOpened(folder);
+
+          const { storagePath, absolutePath } = await this.savePdf(
+            folderId,
+            fileId,
+            file.buffer,
+          );
+
+          savedAbsolutePath = absolutePath;
+
+          const digitalFile = await tx.digitalFile.create({
+            data: {
+              id: fileId,
+
+              name,
+              description,
+
+              originalName: file.originalname,
+              storagePath,
+              mimeType: 'application/pdf',
+              size: file.size,
+
+              createdById: userId,
+              digitalFolderId: folderId,
             },
-          },
-        });
+          });
 
-        if (!folder) {
-          throw new NotFoundException('Folder not found');
-        }
+          const dataLog: CreateLog = {
+            userId,
+            action: LogActions.file.create,
+            entity: LogEntities.file,
+            affected: digitalFile.id,
+            description: '',
+          };
 
-        this.validateContainerIsOpened(folder);
+          await this.logsService.create(dataLog, tx);
 
-        const { storagePath, absolutePath } = await this.savePdf(
-          folderId,
-          fileId,
-          file.buffer,
-        );
-
-        savedAbsolutePath = absolutePath;
-
-        const digitalFile = await tx.digitalFile.create({
-          data: {
-            id: fileId,
-
-            name,
-            description,
-
-            originalName: file.originalname,
-            storagePath,
-            mimeType: 'application/pdf',
-            size: file.size,
-
-            createdById: userId,
-            digitalFolderId: folderId,
-          },
-        });
-
-        const dataLog: CreateLog = {
-          userId,
-          action: LogActions.file.create,
-          entity: LogEntities.file,
-          affected: digitalFile.id,
-          description: '',
-        };
-
-        await this.logsService.create(dataLog, tx);
-
-        return digitalFile;
-      });
+          return digitalFile;
+        },
+        { timeout: 15000 },
+      );
     } catch (error: unknown) {
       if (savedAbsolutePath) {
         await unlink(savedAbsolutePath).catch(() => undefined);
@@ -532,17 +560,47 @@ export class FolderService {
     updateDigitalFileDto: UpdateDigitalFileDto,
   ) {
     try {
-      const { digitalFile } = await this.getAccessibleFile(user, fileId);
-
-      this.validateContainerIsOpened(digitalFile.digitalFolder);
-
       const { name, description } = updateDigitalFileDto;
 
+      const target = await this.prisma.digitalFile.findFirst({
+        where: {
+          id: fileId,
+          deletedAt: null,
+
+          digitalFolder: {
+            deletedAt: null,
+          },
+        },
+
+        select: {
+          digitalFolder: {
+            select: {
+              stageId: true,
+            },
+          },
+        },
+      });
+
+      if (!target) {
+        throw new NotFoundException('Archivo no encontrado');
+      }
+
       return await this.prisma.$transaction(async (tx) => {
+        if (!target.digitalFolder) {
+          throw new NotFoundException('Archivo no encontrado');
+        }
+
+        await lockStage(tx, target.digitalFolder.stageId);
+
+        const { digitalFile } = await this.getAccessibleFile(user, fileId, tx);
+
+        this.validateContainerIsOpened(digitalFile.digitalFolder);
+
         const updatedFile = await tx.digitalFile.update({
           where: {
             id: digitalFile.id,
           },
+
           data: {
             name,
             description,
@@ -551,9 +609,13 @@ export class FolderService {
 
         const dataLog: CreateLog = {
           userId: user.id,
+
           action: LogActions.file.update,
+
           entity: LogEntities.file,
+
           affected: digitalFile.id,
+
           description: 'Actualización de nombre y descripción del archivo',
         };
 
@@ -756,9 +818,6 @@ export class FolderService {
 
             await this.logsService.create(dataLog, tx);
 
-            databaseUpdated = true;
-            await unlink(movedAbsolutePath);
-
             return {
               id: fileId,
               deletedAt: now,
@@ -882,8 +941,12 @@ export class FolderService {
     }
   }
 
-  private async getAccessibleFile(user: User, fileId: string) {
-    const digitalFile = await this.prisma.digitalFile.findFirst({
+  private async getAccessibleFile(
+    user: User,
+    fileId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const digitalFile = await tx.digitalFile.findFirst({
       where: {
         id: fileId,
         deletedAt: null,
