@@ -13,7 +13,13 @@ import {
   ProcessDto,
 } from './dto';
 import { Prisma } from 'src/generated/prisma/client';
-import { buildTree, LogActions, LogEntities, lockStage } from 'src/common';
+import {
+  buildTree,
+  LogActions,
+  LogEntities,
+  lockStage,
+  lockProcess,
+} from 'src/common';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
 import { DeactivateSubstageDto } from './dto/deactivate-substage.dto';
@@ -211,17 +217,28 @@ export class ProcessesService {
 
   async initProcess(processId: string, userId: string) {
     try {
-      const processStatus = await this.prisma.process.findUnique({
-        select: { status: true },
-        where: { id: processId },
-      });
+      return await this.prisma.$transaction(async (tx) => {
+        await lockProcess(tx, processId);
 
-      if (!processStatus) throw new Error('Process not found.');
+        const process = await tx.process.findUnique({
+          where: {
+            id: processId,
+          },
 
-      if (processStatus.status !== 'created')
-        throw new Error('Process already initialized.');
+          select: {
+            id: true,
+            status: true,
+          },
+        });
 
-      await this.prisma.$transaction(async (tx) => {
+        if (!process) {
+          throw new NotFoundException('Proceso no encontrado.');
+        }
+
+        if (process.status !== 'created') {
+          throw new BadRequestException('El proceso ya fue iniciado.');
+        }
+
         await tx.processStage.createMany({
           data: [
             {
@@ -273,24 +290,36 @@ export class ProcessesService {
         });
 
         await tx.process.update({
-          data: { status: 'opened' },
-          where: { id: processId },
+          where: {
+            id: processId,
+          },
+
+          data: {
+            status: 'opened',
+          },
         });
 
         const dataLog: CreateLog = {
           userId,
+
           affected: processId,
+
           entity: LogEntities.process,
+
           action: LogActions.process.init,
+
           description: '',
         };
 
         await this.logsService.create(dataLog, tx);
-      });
 
-      return;
+        return;
+      });
     } catch (error: unknown) {
-      console.log(error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.handleDBErrors(error);
     }
   }
@@ -542,21 +571,56 @@ export class ProcessesService {
     const { name, description, order } = createStageDto;
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await lockProcess(tx, processId);
         const processExists = await tx.process.findUnique({
-          select: { id: true, stages: { orderBy: { order: 'asc' } } },
-          where: { id: processId },
+          select: {
+            id: true,
+            stages: {
+              where: {
+                status: {
+                  not: 'deleted',
+                },
+              },
+              orderBy: {
+                order: 'asc',
+              },
+            },
+          },
+          where: {
+            id: processId,
+          },
         });
-        if (!processExists) throw new Error('Process not found.');
-
-        for (const stage of processExists.stages) {
-          if (stage.order >= order) {
-            const newOrder = stage.order + 1;
-            await tx.processStage.update({
-              data: { order: newOrder },
-              where: { id: stage.id },
-            });
-          }
+        if (!processExists) {
+          throw new NotFoundException('Proceso no encontrado.');
         }
+
+        const maxOrder =
+          processExists.stages.length > 0
+            ? Math.max(...processExists.stages.map((stage) => stage.order))
+            : 0;
+
+        if (order < 1 || order > maxOrder + 1) {
+          throw new BadRequestException(
+            'La posición de la nueva etapa no es válida.',
+          );
+        }
+
+        await tx.processStage.updateMany({
+          where: {
+            processId,
+            status: {
+              not: 'deleted',
+            },
+            order: {
+              gte: order,
+            },
+          },
+          data: {
+            order: {
+              increment: 1,
+            },
+          },
+        });
 
         const newStage = await tx.processStage.create({
           data: {
@@ -645,15 +709,42 @@ export class ProcessesService {
     try {
       const { reason } = deactivateSubstageDto;
 
+      const target = await this.prisma.processStage.findUnique({
+        where: {
+          id: stageId,
+        },
+        select: {
+          processId: true,
+        },
+      });
+
+      if (!target) {
+        throw new NotFoundException('La etapa no fue encontrada.');
+      }
+
       return await this.prisma.$transaction(async (tx) => {
-        const stage = await tx.processStage.findUnique({
+        await lockProcess(tx, target.processId);
+
+        await lockStage(tx, stageId);
+
+        const stage = await tx.processStage.findFirst({
           where: {
             id: stageId,
+            status: {
+              not: 'deleted',
+            },
+          },
+          select: {
+            id: true,
+            processId: true,
+            order: true,
+            main: true,
+            status: true,
           },
         });
 
         if (!stage) {
-          throw new BadRequestException('La etapa no fue encontrada.');
+          throw new NotFoundException('La etapa no fue encontrada.');
         }
 
         if (stage.main) {
@@ -668,8 +759,10 @@ export class ProcessesService {
           );
         }
 
-        if (stage.status === 'deleted') {
-          throw new BadRequestException('La etapa ya se encuentra eliminada.');
+        if (stage.status !== 'opened') {
+          throw new BadRequestException(
+            'La etapa debe estar abierta para poder eliminarse.',
+          );
         }
 
         await tx.processStage.update({
@@ -678,6 +771,23 @@ export class ProcessesService {
           },
           data: {
             status: 'deleted',
+          },
+        });
+
+        await tx.processStage.updateMany({
+          where: {
+            processId: stage.processId,
+            status: {
+              not: 'deleted',
+            },
+            order: {
+              gt: stage.order,
+            },
+          },
+          data: {
+            order: {
+              decrement: 1,
+            },
           },
         });
 
@@ -690,9 +800,14 @@ export class ProcessesService {
         };
 
         await this.logsService.create(dataLog, tx);
+
         return;
       });
     } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.handleDBErrors(error);
     }
   }
@@ -748,7 +863,7 @@ export class ProcessesService {
         });
 
         if (!substage) {
-          throw new Error('The substage was not found');
+          throw new NotFoundException('La subetapa no fue encontrada.');
         }
 
         if (substage.status === 'closed') {
@@ -760,7 +875,9 @@ export class ProcessesService {
         }
 
         if (substage.status !== 'opened') {
-          throw new Error('The substage must be opened');
+          throw new BadRequestException(
+            'La subetapa debe estar abierta para poder cerrarse.',
+          );
         }
 
         const emptyFolder = substage.digitalFolders.find(
@@ -768,7 +885,7 @@ export class ProcessesService {
         );
 
         if (emptyFolder) {
-          throw new Error(
+          throw new BadRequestException(
             `La carpeta "${emptyFolder.name}" no contiene documentos.`,
           );
         }
@@ -797,6 +914,10 @@ export class ProcessesService {
         return updatedSubstage;
       });
     } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.handleDBErrors(error);
     }
   }
