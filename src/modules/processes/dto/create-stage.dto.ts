@@ -1,4 +1,4 @@
-import { IsInt, IsString, Min } from 'class-validator';
+import { IsString } from 'class-validator';
 
 export class CreateStageDto {
   @IsString()
@@ -6,8 +6,4 @@ export class CreateStageDto {
 
   @IsString()
   readonly description!: string;
-
-  @IsInt()
-  @Min(1)
-  readonly order!: number;
 }

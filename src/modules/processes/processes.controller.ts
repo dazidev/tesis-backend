@@ -72,7 +72,7 @@ export class ProcessesController {
     return this.processesService.initProcess(processId, userId);
   }
 
-  //* CREATE STAGE
+  /*//* CREATE STAGE
   @Post(':processId/stage')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   createStage(
@@ -81,6 +81,22 @@ export class ProcessesController {
     @Body() createStageDto: CreateStageDto,
   ) {
     return this.processesService.createStage(processId, createStageDto, userId);
+  }*/
+
+  //* CREATE INTERMEDIATE STAGE
+  @Post('stage/:stageId/intermediate')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  createStage(
+    @GetUser('id')
+    userId: string,
+
+    @Param('stageId', ParseUUIDPipe)
+    stageId: string,
+
+    @Body()
+    createStageDto: CreateStageDto,
+  ) {
+    return this.processesService.createStage(stageId, createStageDto, userId);
   }
 
   //* GET STAGE BY ID
@@ -160,5 +176,31 @@ export class ProcessesController {
     @Param('stageId', ParseUUIDPipe) stageId: string,
   ) {
     return this.processesService.closeStage(stageId, userId);
+  }
+
+  //* ADVANCE STAGE
+  @Patch('stage/:stageId/advance')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  advanceStage(
+    @GetUser('id')
+    userId: string,
+
+    @Param('stageId', ParseUUIDPipe)
+    stageId: string,
+  ) {
+    return this.processesService.advanceStage(stageId, userId);
+  }
+
+  //* FINALIZE PROCESS
+  @Patch('stage/:stageId/finalize-process')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  finalizeProcess(
+    @GetUser('id')
+    userId: string,
+
+    @Param('stageId', ParseUUIDPipe)
+    stageId: string,
+  ) {
+    return this.processesService.finalizeProcess(stageId, userId);
   }
 }

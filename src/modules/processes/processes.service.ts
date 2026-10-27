@@ -564,57 +564,129 @@ export class ProcessesService {
   }
 
   async createStage(
-    processId: string,
+    stageId: string,
     createStageDto: CreateStageDto,
     userId: string,
   ) {
-    const { name, description, order } = createStageDto;
+    const { name, description } = createStageDto;
+
     try {
+      const target = await this.prisma.processStage.findFirst({
+        where: {
+          id: stageId,
+
+          status: {
+            not: 'deleted',
+          },
+        },
+
+        select: {
+          processId: true,
+        },
+      });
+
+      if (!target) {
+        throw new NotFoundException('La etapa no fue encontrada.');
+      }
+
       return await this.prisma.$transaction(async (tx) => {
-        await lockProcess(tx, processId);
-        const processExists = await tx.process.findUnique({
+        await lockProcess(tx, target.processId);
+        await lockStage(tx, stageId);
+
+        const currentStage = await tx.processStage.findFirst({
+          where: {
+            id: stageId,
+
+            status: {
+              not: 'deleted',
+            },
+          },
+
           select: {
             id: true,
-            stages: {
-              where: {
-                status: {
-                  not: 'deleted',
-                },
-              },
-              orderBy: {
-                order: 'asc',
+            processId: true,
+            order: true,
+            status: true,
+
+            process: {
+              select: {
+                status: true,
               },
             },
           },
-          where: {
-            id: processId,
-          },
         });
-        if (!processExists) {
-          throw new NotFoundException('Proceso no encontrado.');
+
+        if (!currentStage) {
+          throw new NotFoundException('La etapa no fue encontrada.');
         }
 
-        const maxOrder =
-          processExists.stages.length > 0
-            ? Math.max(...processExists.stages.map((stage) => stage.order))
-            : 0;
+        if (currentStage.process.status !== 'opened') {
+          throw new BadRequestException('El proceso no se encuentra abierto.');
+        }
 
-        if (order < 1 || order > maxOrder + 1) {
+        if (currentStage.status !== 'closed') {
           throw new BadRequestException(
-            'La posición de la nueva etapa no es válida.',
+            'La etapa anterior debe estar cerrada para crear una etapa intermedia.',
           );
         }
 
-        await tx.processStage.updateMany({
+        const openedStage = await tx.processStage.findFirst({
           where: {
-            processId,
+            processId: currentStage.processId,
+            status: 'opened',
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (openedStage) {
+          throw new BadRequestException(
+            'El proceso ya tiene una etapa abierta.',
+          );
+        }
+
+        const nextStage = await tx.processStage.findFirst({
+          where: {
+            processId: currentStage.processId,
             status: {
               not: 'deleted',
             },
             order: {
-              gte: order,
+              gt: currentStage.order,
             },
           },
+          orderBy: {
+            order: 'asc',
+          },
+          select: {
+            id: true,
+            order: true,
+            status: true,
+          },
+        });
+
+        if (nextStage && nextStage.status !== 'created') {
+          throw new BadRequestException(
+            'No es posible crear una etapa intermedia desde esta posición.',
+          );
+        }
+
+        const newOrder = currentStage.order + 1;
+
+        await tx.processStage.updateMany({
+          where: {
+            processId: currentStage.processId,
+
+            status: {
+              not: 'deleted',
+            },
+
+            order: {
+              gte: newOrder,
+            },
+          },
+
           data: {
             order: {
               increment: 1,
@@ -626,17 +698,26 @@ export class ProcessesService {
           data: {
             name,
             description,
-            order,
+
+            order: newOrder,
+
             status: 'opened',
-            processId,
+
+            main: false,
+
+            processId: currentStage.processId,
           },
         });
 
         const dataLog: CreateLog = {
           userId,
+
           action: LogActions.process.stage.create,
+
           entity: LogEntities.stage,
+
           affected: newStage.id,
+
           description: '',
         };
 
@@ -645,6 +726,10 @@ export class ProcessesService {
         return newStage;
       });
     } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.handleDBErrors(error);
     }
   }
@@ -1068,6 +1153,300 @@ export class ProcessesService {
         throw new BadRequestException(result.reason);
       }
       return result.data;
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.handleDBErrors(error);
+    }
+  }
+
+  async advanceStage(stageId: string, userId: string) {
+    try {
+      const target = await this.prisma.processStage.findFirst({
+        where: {
+          id: stageId,
+          status: {
+            not: 'deleted',
+          },
+        },
+        select: {
+          processId: true,
+        },
+      });
+
+      if (!target) {
+        throw new NotFoundException('La etapa no fue encontrada.');
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        await lockProcess(tx, target.processId);
+
+        const currentStage = await tx.processStage.findFirst({
+          where: {
+            id: stageId,
+            status: {
+              not: 'deleted',
+            },
+          },
+          select: {
+            id: true,
+            order: true,
+            status: true,
+            processId: true,
+            process: {
+              select: {
+                status: true,
+              },
+            },
+          },
+        });
+
+        if (!currentStage) {
+          throw new NotFoundException('La etapa no fue encontrada.');
+        }
+
+        if (currentStage.process.status !== 'opened') {
+          throw new BadRequestException('El proceso no se encuentra abierto.');
+        }
+
+        if (currentStage.status !== 'closed') {
+          throw new BadRequestException(
+            'La etapa actual debe estar cerrada antes de avanzar.',
+          );
+        }
+
+        const nextStage = await tx.processStage.findFirst({
+          where: {
+            processId: currentStage.processId,
+            status: {
+              not: 'deleted',
+            },
+            order: {
+              gt: currentStage.order,
+            },
+          },
+          orderBy: {
+            order: 'asc',
+          },
+          select: {
+            id: true,
+            name: true,
+            order: true,
+            status: true,
+          },
+        });
+
+        if (!nextStage) {
+          throw new BadRequestException(
+            'No existe una etapa siguiente para avanzar.',
+          );
+        }
+
+        if (nextStage.status !== 'created') {
+          throw new BadRequestException(
+            'La siguiente etapa no está disponible para ser abierta.',
+          );
+        }
+
+        const openedStage = await tx.processStage.findFirst({
+          where: {
+            processId: currentStage.processId,
+
+            status: 'opened',
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (openedStage) {
+          throw new BadRequestException(
+            'El proceso ya tiene una etapa abierta.',
+          );
+        }
+
+        const updatedStage = await tx.processStage.update({
+          where: {
+            id: nextStage.id,
+          },
+          data: {
+            status: 'opened',
+          },
+          select: {
+            id: true,
+            name: true,
+            order: true,
+            status: true,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.process.stage.advance,
+          entity: LogEntities.stage,
+          affected: updatedStage.id,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return {
+          previousStageId: currentStage.id,
+
+          stage: updatedStage,
+        };
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.handleDBErrors(error);
+    }
+  }
+
+  async finalizeProcess(stageId: string, userId: string) {
+    try {
+      const target = await this.prisma.processStage.findFirst({
+        where: {
+          id: stageId,
+          status: {
+            not: 'deleted',
+          },
+        },
+        select: {
+          processId: true,
+        },
+      });
+
+      if (!target) {
+        throw new NotFoundException('La etapa no fue encontrada.');
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        await lockProcess(tx, target.processId);
+        await lockStage(tx, stageId);
+
+        const process = await tx.process.findUnique({
+          where: {
+            id: target.processId,
+          },
+
+          select: {
+            id: true,
+            status: true,
+          },
+        });
+
+        if (!process) {
+          throw new NotFoundException('El proceso no fue encontrado.');
+        }
+
+        if (process.status === 'closed') {
+          return {
+            id: process.id,
+            status: process.status,
+          };
+        }
+
+        if (process.status !== 'opened') {
+          throw new BadRequestException(
+            'El proceso debe estar abierto para poder finalizarse.',
+          );
+        }
+
+        const currentStage = await tx.processStage.findFirst({
+          where: {
+            id: stageId,
+            processId: process.id,
+            status: {
+              not: 'deleted',
+            },
+          },
+          select: {
+            id: true,
+            order: true,
+            status: true,
+          },
+        });
+
+        if (!currentStage) {
+          throw new NotFoundException('La etapa no fue encontrada.');
+        }
+
+        if (currentStage.status !== 'closed') {
+          throw new BadRequestException(
+            'La última etapa debe estar cerrada antes de finalizar el proceso.',
+          );
+        }
+
+        const laterStage = await tx.processStage.findFirst({
+          where: {
+            processId: process.id,
+            status: {
+              not: 'deleted',
+            },
+            order: {
+              gt: currentStage.order,
+            },
+          },
+
+          select: {
+            id: true,
+          },
+        });
+
+        if (laterStage) {
+          throw new BadRequestException(
+            'No es posible finalizar el proceso porque existen etapas posteriores.',
+          );
+        }
+
+        const pendingStage = await tx.processStage.findFirst({
+          where: {
+            processId: process.id,
+            status: {
+              in: ['opened', 'created'],
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (pendingStage) {
+          throw new BadRequestException(
+            'No es posible finalizar el proceso porque existen etapas pendientes.',
+          );
+        }
+
+        const updatedProcess = await tx.process.update({
+          where: {
+            id: process.id,
+          },
+          data: {
+            status: 'closed',
+          },
+          select: {
+            id: true,
+            status: true,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId,
+          action: LogActions.process.close,
+          entity: LogEntities.process,
+          affected: process.id,
+          description: '',
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return updatedProcess;
+      });
     } catch (error: unknown) {
       if (error instanceof HttpException) {
         throw error;
