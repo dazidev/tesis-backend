@@ -73,6 +73,10 @@ export class AuthService {
       if (!bcrypt.compareSync(pass, user.password))
         throw new Error('Credentials are not valid');
 
+      if (user.status !== 'active') {
+        throw new UnauthorizedException('User not active');
+      }
+
       const accessTokenExpiresIn =
         parseInt(this.configService.get('TIME_ACCESS_TOKEN') ?? '20m') * 60; // SECONDS
 
@@ -180,6 +184,14 @@ export class AuthService {
       });
 
       return {
+        user: {
+          id: user.id,
+          name: user.name,
+          lastname: user.lastname,
+          email: user.email,
+          roles: user.roles,
+          status: user.status,
+        },
         accessToken,
         refreshToken,
         accessTokenExpiresIn,
