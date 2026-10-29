@@ -66,42 +66,4 @@ export class AuthController {
   getUserInvitation(@Param('token') token: string) {
     return this.authService.getUserInvitation(token);
   }
-
-  @Get('private')
-  @UseGuards(AuthGuard())
-  testingPrivateRoute(
-    // @Req() request: Express.Request,
-    @GetUser() user: User,
-    @GetUser('email') userEmail: string,
-    @RawHeaders() rawHeaders: string[],
-  ) {
-    return {
-      ok: true,
-      message: 'Hola Mundo Private',
-      user,
-      userEmail,
-      rawHeaders,
-    };
-  }
-
-  // @SetMetadata('role', 'USER')
-
-  @Get('private2')
-  @RoleProtected(ValidRoles.client)
-  @UseGuards(AuthGuard(), UserRoleGuard)
-  privateRoute2(@GetUser() user: User) {
-    return {
-      ok: true,
-      user,
-    };
-  }
-
-  @Get('private3')
-  @Auth(ValidRoles.client)
-  privateRoute3(@GetUser() user: User) {
-    return {
-      ok: true,
-      user,
-    };
-  }
 }
