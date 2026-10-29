@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -319,6 +320,9 @@ export class AuthService {
   }
 
   private handleDBErrors(error): never {
+    if (error instanceof HttpException) {
+      throw error;
+    }
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
