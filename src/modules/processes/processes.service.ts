@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   Injectable,
   InternalServerErrorException,
@@ -23,6 +24,7 @@ import {
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
 import { DeactivateSubstageDto } from './dto/deactivate-substage.dto';
+import { type User } from '../auth/interfaces/user';
 
 @Injectable()
 export class ProcessesService {
@@ -31,10 +33,43 @@ export class ProcessesService {
     private logsService: LogsService,
   ) {}
 
-  async createProcess(userId: string, processDto: ProcessDto) {
+  async createProcess(user: User, processDto: ProcessDto) {
     try {
       const { courtNumber, caseFileNumber, type, managedByID, defendant } =
         processDto;
+
+      const userId = user.id;
+      const isAdmin = user.roles.includes('admin');
+
+      if (!isAdmin && managedByID && managedByID !== userId) {
+        throw new ForbiddenException(
+          'Un abogado no puede asignar procesos a otros usuarios.',
+        );
+      }
+
+      const managerId = isAdmin ? managedByID || userId : userId;
+
+      if (isAdmin && managedByID) {
+        const manager = await this.prisma.user.findFirst({
+          where: {
+            id: managedByID,
+            status: 'active',
+            roles: {
+              has: 'lawyer',
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (!manager) {
+          throw new BadRequestException(
+            'El responsable seleccionado debe ser un abogado activo.',
+          );
+        }
+      }
+
       const { name, lastname, birthDate, deathDate } = defendant;
 
       let process;
@@ -59,7 +94,7 @@ export class ProcessesService {
             type,
             defendantId: defendantId.id,
             status: 'created',
-            managedByID: managedByID ?? userId,
+            managedByID: managerId,
             createdById: userId,
           },
         });
@@ -77,15 +112,26 @@ export class ProcessesService {
         process = processResponse;
       });
 
-      if (!process) return process;
+      return process;
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
   }
 
-  async getProcesses() {
+  async getProcesses(user: User) {
     try {
-      const processes = await this.prisma.process.findMany();
+      const isAdmin = user.roles.includes('admin');
+
+      const processes = await this.prisma.process.findMany({
+        where: isAdmin
+          ? {}
+          : {
+              managedByID: user.id,
+              status: {
+                not: 'deleted',
+              },
+            },
+      });
 
       return processes;
     } catch (error: unknown) {
@@ -93,9 +139,10 @@ export class ProcessesService {
     }
   }
 
-  async getProcessById(processId: string) {
+  async getProcessById(processId: string, user: User) {
     try {
-      const stageProcess = await this.prisma.process.findUnique({
+      const isAdmin = user.roles.includes('admin');
+      const stageProcess = await this.prisma.process.findFirst({
         select: {
           id: true,
           caseFileNumber: true,
@@ -115,9 +162,13 @@ export class ProcessesService {
               processId: true,
             },
             where: {
+              id: processId,
               status: {
                 not: 'deleted',
               },
+              ...(!isAdmin && {
+                managedByID: user.id,
+              }),
             },
             orderBy: { order: 'asc' },
           },
@@ -130,7 +181,9 @@ export class ProcessesService {
         },
       });
 
-      if (!stageProcess) throw new Error('Process not found.');
+      if (!stageProcess) {
+        throw new NotFoundException('Proceso no encontrado.');
+      }
 
       const stagesIds = stageProcess.stages.map((stage) => stage.id);
 
@@ -174,66 +227,52 @@ export class ProcessesService {
   async deactivateProcess(
     id: string,
     processDeactivateDto: ProcessDeactivateDto,
-    userId: string,
+    user: User,
   ) {
     try {
       const { reason } = processDeactivateDto;
 
-      const process = await this.prisma.process.findUnique({
-        select: { status: true },
-        where: { id },
-      });
+      return await this.prisma.$transaction(async (tx) => {
+        const process = await this.lockAndValidateProcess(tx, id, user);
 
-      if (!process) throw new Error('The process was not found');
-
-      await this.prisma.$transaction(async (tx) => {
         if (process.status === 'created') {
-          await tx.process.delete({ where: { id } });
+          await tx.process.delete({
+            where: { id },
+          });
         } else {
           await tx.process.update({
-            data: { status: 'deleted' },
             where: { id },
+            data: {
+              status: 'deleted',
+            },
           });
         }
 
         const dataLog: CreateLog = {
-          userId,
+          userId: user.id,
           action:
             process.status === 'created'
               ? LogActions.process.delete
               : LogActions.process.deactivate,
           entity: LogEntities.process,
+          affected: id,
           description: reason,
         };
 
         await this.logsService.create(dataLog, tx);
-      });
 
-      return;
+        return;
+      });
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }
   }
 
-  async initProcess(processId: string, userId: string) {
+  async initProcess(processId: string, user: User) {
+    const userId = user.id;
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await lockProcess(tx, processId);
-
-        const process = await tx.process.findUnique({
-          where: {
-            id: processId,
-          },
-
-          select: {
-            id: true,
-            status: true,
-          },
-        });
-
-        if (!process) {
-          throw new NotFoundException('Proceso no encontrado.');
-        }
+        const process = await this.lockAndValidateProcess(tx, processId, user);
 
         if (process.status !== 'created') {
           throw new BadRequestException('El proceso ya fue iniciado.');
@@ -566,8 +605,9 @@ export class ProcessesService {
   async createStage(
     stageId: string,
     createStageDto: CreateStageDto,
-    userId: string,
+    user: User,
   ) {
+    const userId = user.id;
     const { name, description } = createStageDto;
 
     try {
@@ -590,7 +630,8 @@ export class ProcessesService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockProcess(tx, target.processId);
+        await this.lockAndValidateProcess(tx, target.processId, user);
+
         await lockStage(tx, stageId);
 
         const currentStage = await tx.processStage.findFirst({
@@ -734,7 +775,7 @@ export class ProcessesService {
     }
   }
 
-  async getStageById(stageId: string) {
+  async getStageById(stageId: string, user: User) {
     try {
       const stage = await this.prisma.processStage.findFirst({
         include: {
@@ -760,8 +801,18 @@ export class ProcessesService {
           },
           tasks: {
             where: {
-              deletedAt: null,
-              substageId: null,
+              id: stageId,
+              status: {
+                not: 'deleted',
+              },
+              process: {
+                status: {
+                  not: 'deleted',
+                },
+                ...(!user.roles.includes('admin') && {
+                  managedByID: user.id,
+                }),
+              },
             },
 
             orderBy: {
@@ -778,7 +829,9 @@ export class ProcessesService {
         },
       });
 
-      if (!stage) throw new Error('Stage not found.');
+      if (!stage) {
+        throw new NotFoundException('La etapa no fue encontrada.');
+      }
 
       return stage;
     } catch (error: unknown) {
@@ -789,8 +842,9 @@ export class ProcessesService {
   async deactivateStage(
     stageId: string,
     deactivateSubstageDto: DeactivateSubstageDto,
-    userId: string,
+    user: User,
   ) {
+    const userId = user.id;
     try {
       const { reason } = deactivateSubstageDto;
 
@@ -808,8 +862,7 @@ export class ProcessesService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockProcess(tx, target.processId);
-
+        await this.lockAndValidateProcess(tx, target.processId, user);
         await lockStage(tx, stageId);
 
         const stage = await tx.processStage.findFirst({
@@ -1007,9 +1060,25 @@ export class ProcessesService {
     }
   }
 
-  async closeStage(stageId: string, userId: string) {
+  async closeStage(stageId: string, user: User) {
+    const userId = user.id;
     try {
       const result = await this.prisma.$transaction(async (tx) => {
+        const target = await tx.processStage.findUnique({
+          where: {
+            id: stageId,
+          },
+          select: {
+            processId: true,
+          },
+        });
+
+        if (!target) {
+          throw new NotFoundException('La etapa no fue encontrada.');
+        }
+
+        await this.lockAndValidateProcess(tx, target.processId, user);
+
         await lockStage(tx, stageId);
 
         const stage = await tx.processStage.findFirst({
@@ -1162,7 +1231,8 @@ export class ProcessesService {
     }
   }
 
-  async advanceStage(stageId: string, userId: string) {
+  async advanceStage(stageId: string, user: User) {
+    const userId = user.id;
     try {
       const target = await this.prisma.processStage.findFirst({
         where: {
@@ -1181,7 +1251,7 @@ export class ProcessesService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockProcess(tx, target.processId);
+        await this.lockAndValidateProcess(tx, target.processId, user);
 
         const currentStage = await tx.processStage.findFirst({
           where: {
@@ -1307,7 +1377,8 @@ export class ProcessesService {
     }
   }
 
-  async finalizeProcess(stageId: string, userId: string) {
+  async finalizeProcess(stageId: string, user: User) {
+    const userId = user.id;
     try {
       const target = await this.prisma.processStage.findFirst({
         where: {
@@ -1326,7 +1397,7 @@ export class ProcessesService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockProcess(tx, target.processId);
+        await this.lockAndValidateProcess(tx, target.processId, user);
         await lockStage(tx, stageId);
 
         const process = await tx.process.findUnique({
@@ -1509,8 +1580,55 @@ export class ProcessesService {
     return ids;
   }
 
+  private async lockAndValidateProcess(
+    tx: Prisma.TransactionClient,
+    processId: string,
+    user: User,
+  ) {
+    const isAdmin = user.roles.includes('admin');
+
+    const where: Prisma.ProcessWhereInput = {
+      id: processId,
+      status: {
+        not: 'deleted',
+      },
+      ...(!isAdmin && {
+        managedByID: user.id,
+      }),
+    };
+
+    const existingProcess = await tx.process.findFirst({
+      where,
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existingProcess) {
+      throw new NotFoundException('Proceso no encontrado.');
+    }
+
+    await lockProcess(tx, processId);
+
+    const process = await tx.process.findFirst({
+      where,
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!process) {
+      throw new NotFoundException('Proceso no encontrado.');
+    }
+
+    return process;
+  }
+
   private handleDBErrors(error): never {
-    if (
+    if (error instanceof HttpException) {
+      throw error;
+    } else if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
     ) {

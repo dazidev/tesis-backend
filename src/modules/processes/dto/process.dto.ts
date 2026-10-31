@@ -22,7 +22,7 @@ export class ProcessDto {
 
   @IsOptional()
   @IsUUID()
-  readonly managedByID!: string;
+  readonly managedByID?: string;
 
   @ValidateNested()
   @Type(() => DefendantDto)

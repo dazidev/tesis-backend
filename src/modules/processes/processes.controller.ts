@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ProcessesService } from './processes.service';
 import { Auth } from '../auth/decorators/auth.decorator';
-import { ValidRoles } from '../auth/interfaces';
+import { type User, ValidRoles } from '../auth/interfaces';
 import { GetUser } from '../auth/decorators';
 import {
   CreateStageDto,
@@ -29,36 +29,39 @@ export class ProcessesController {
   //* CREATE PROCESS
   @Post('')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
-  createProcess(@GetUser('id') UserId: string, @Body() processDto: ProcessDto) {
-    return this.processesService.createProcess(UserId, processDto);
+  createProcess(@GetUser() user: User, @Body() processDto: ProcessDto) {
+    return this.processesService.createProcess(user, processDto);
   }
 
-  //* GET MANY PROCESS
+  //* GET MANY PROCESSES
   @Get('')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
-  getProcess() {
-    return this.processesService.getProcesses();
+  getProcess(@GetUser() user: User) {
+    return this.processesService.getProcesses(user);
   }
 
   //* GET PROCESS BY ID
   @Get(':id')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
-  getProcessById(@Param('id', ParseUUIDPipe) processId: string) {
-    return this.processesService.getProcessById(processId);
+  getProcessById(
+    @GetUser() user: User,
+    @Param('id', ParseUUIDPipe) processId: string,
+  ) {
+    return this.processesService.getProcessById(processId, user);
   }
 
   //* DEACTIVATE PROCESS
   @Patch(':id/deactivate')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   deactivateProcess(
-    @GetUser('id') UserId: string,
+    @GetUser() user: User,
     @Body() processDeactivateDto: ProcessDeactivateDto,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.processesService.deactivateProcess(
       id,
       processDeactivateDto,
-      UserId,
+      user,
     );
   }
 
@@ -66,10 +69,10 @@ export class ProcessesController {
   @Post(':id/init')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   initProcess(
-    @GetUser('id') userId: string,
+    @GetUser() user: User,
     @Param('id', ParseUUIDPipe) processId: string,
   ) {
-    return this.processesService.initProcess(processId, userId);
+    return this.processesService.initProcess(processId, user);
   }
 
   /*//* CREATE STAGE
@@ -87,37 +90,35 @@ export class ProcessesController {
   @Post('stage/:stageId/intermediate')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   createStage(
-    @GetUser('id')
-    userId: string,
-
-    @Param('stageId', ParseUUIDPipe)
-    stageId: string,
-
-    @Body()
-    createStageDto: CreateStageDto,
+    @GetUser() user: User,
+    @Param('stageId', ParseUUIDPipe) stageId: string,
+    @Body() createStageDto: CreateStageDto,
   ) {
-    return this.processesService.createStage(stageId, createStageDto, userId);
+    return this.processesService.createStage(stageId, createStageDto, user);
   }
 
   //* GET STAGE BY ID
   @Get('stage/:stageId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
-  getStageById(@Param('stageId', ParseUUIDPipe) stageId: string) {
-    return this.processesService.getStageById(stageId);
+  getStageById(
+    @GetUser() user: User,
+    @Param('stageId', ParseUUIDPipe) stageId: string,
+  ) {
+    return this.processesService.getStageById(stageId, user);
   }
 
-  //* DELETE/DEACTIVE STAGE
+  //* DELETE/DEACTIVATE STAGE
   @Patch('stage/:stageId/deactivate')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   deactivateStage(
-    @GetUser('id') userId: string,
+    @GetUser() user: User,
     @Body() deactivateStageDto: DeactivateStageDto,
     @Param('stageId', ParseUUIDPipe) stageId: string,
   ) {
     return this.processesService.deactivateStage(
       stageId,
       deactivateStageDto,
-      userId,
+      user,
     );
   }
 
@@ -172,35 +173,29 @@ export class ProcessesController {
   @Patch('stage/:stageId/close')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   closeStage(
-    @GetUser('id') userId: string,
+    @GetUser() user: User,
     @Param('stageId', ParseUUIDPipe) stageId: string,
   ) {
-    return this.processesService.closeStage(stageId, userId);
+    return this.processesService.closeStage(stageId, user);
   }
 
   //* ADVANCE STAGE
   @Patch('stage/:stageId/advance')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   advanceStage(
-    @GetUser('id')
-    userId: string,
-
-    @Param('stageId', ParseUUIDPipe)
-    stageId: string,
+    @GetUser() user: User,
+    @Param('stageId', ParseUUIDPipe) stageId: string,
   ) {
-    return this.processesService.advanceStage(stageId, userId);
+    return this.processesService.advanceStage(stageId, user);
   }
 
   //* FINALIZE PROCESS
   @Patch('stage/:stageId/finalize-process')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   finalizeProcess(
-    @GetUser('id')
-    userId: string,
-
-    @Param('stageId', ParseUUIDPipe)
-    stageId: string,
+    @GetUser() user: User,
+    @Param('stageId', ParseUUIDPipe) stageId: string,
   ) {
-    return this.processesService.finalizeProcess(stageId, userId);
+    return this.processesService.finalizeProcess(stageId, user);
   }
 }
