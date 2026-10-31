@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from 'src/generated/prisma/client';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
-import { lockStage, LogActions, LogEntities } from 'src/common';
+import { lockProcess, lockStage, LogActions, LogEntities } from 'src/common';
 import { type User, ValidRoles } from '../auth/interfaces';
 import {
   CreateTaskDto,
@@ -38,40 +38,12 @@ export class TaskService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockStage(tx, stageId);
+        const stage = await this.lockAndValidateTaskStage(tx, stageId, user);
 
-        const stage = await tx.processStage.findFirst({
-          where: {
-            id: stageId,
-            status: 'opened',
-          },
-
-          select: {
-            id: true,
-
-            process: {
-              select: {
-                managedByID: true,
-              },
-            },
-          },
-        });
-
-        if (!stage) {
-          throw new NotFoundException('Etapa no encontrada');
-        }
-
-        //! todo: review that validation
-
-        const isAdmin = user.roles.includes(ValidRoles.admin);
-
-        const isLawyer = user.roles.includes(ValidRoles.lawyer);
-
-        const lawyerHasAccess =
-          isLawyer && stage.process.managedByID === user.id;
-
-        if (!isAdmin && !lawyerHasAccess) {
-          throw new NotFoundException('Etapa no encontrada');
+        if (stage.status !== 'opened') {
+          throw new BadRequestException(
+            'La etapa debe estar abierta para crear tareas.',
+          );
         }
 
         if (substageId) {
@@ -155,7 +127,7 @@ export class TaskService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockStage(tx, target.stageId);
+        await this.lockAndValidateTaskStage(tx, target.stageId, user);
 
         const task = await this.getAccessibleTask(user, taskId, tx);
 
@@ -228,7 +200,7 @@ export class TaskService {
       const parsedDueDate = new Date(dueDate);
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockStage(tx, target.stageId);
+        await this.lockAndValidateTaskStage(tx, target.stageId, user);
 
         const task = await this.getAccessibleTask(user, taskId, tx);
 
@@ -303,7 +275,7 @@ export class TaskService {
       const { reason } = deactivateTaskDto;
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockStage(tx, target.stageId);
+        await this.lockAndValidateTaskStage(tx, target.stageId, user);
 
         const task = await this.getAccessibleTask(user, taskId, tx);
 
@@ -352,11 +324,6 @@ export class TaskService {
     const db = tx ?? this.prisma;
 
     const task = await db.task.findFirst({
-      where: {
-        id: taskId,
-        deletedAt: null,
-      },
-
       select: {
         id: true,
         description: true,
@@ -384,6 +351,26 @@ export class TaskService {
         substage: {
           select: {
             status: true,
+          },
+        },
+      },
+      where: {
+        id: taskId,
+        deletedAt: null,
+
+        stage: {
+          status: {
+            not: 'deleted',
+          },
+
+          process: {
+            status: {
+              not: 'deleted',
+            },
+
+            ...(!user.roles.includes(ValidRoles.admin) && {
+              managedByID: user.id,
+            }),
           },
         },
       },
@@ -427,6 +414,62 @@ export class TaskService {
         'La subetapa está cerrada y sus tareas no pueden modificarse.',
       );
     }
+  }
+
+  private async lockAndValidateTaskStage(
+    tx: Prisma.TransactionClient,
+    stageId: string,
+    user: User,
+  ) {
+    const isAdmin = user.roles.includes(ValidRoles.admin);
+    const isLawyer = user.roles.includes(ValidRoles.lawyer);
+
+    if (!isAdmin && !isLawyer) {
+      throw new NotFoundException('Etapa no encontrada');
+    }
+
+    const where: Prisma.ProcessStageWhereInput = {
+      id: stageId,
+      status: {
+        not: 'deleted',
+      },
+      process: {
+        status: {
+          not: 'deleted',
+        },
+        ...(!isAdmin && {
+          managedByID: user.id,
+        }),
+      },
+    };
+
+    const target = await tx.processStage.findFirst({
+      where,
+      select: {
+        processId: true,
+      },
+    });
+
+    if (!target) {
+      throw new NotFoundException('Etapa no encontrada');
+    }
+
+    await lockProcess(tx, target.processId);
+    await lockStage(tx, stageId);
+
+    const stage = await tx.processStage.findFirst({
+      where,
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!stage) {
+      throw new NotFoundException('Etapa no encontrada');
+    }
+
+    return stage;
   }
 
   private handleDBErrors(error: unknown): never {
