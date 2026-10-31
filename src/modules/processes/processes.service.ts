@@ -162,13 +162,9 @@ export class ProcessesService {
               processId: true,
             },
             where: {
-              id: processId,
               status: {
                 not: 'deleted',
               },
-              ...(!isAdmin && {
-                managedByID: user.id,
-              }),
             },
             orderBy: { order: 'asc' },
           },
@@ -178,6 +174,9 @@ export class ProcessesService {
           status: {
             not: 'deleted',
           },
+          ...(!isAdmin && {
+            managedByID: user.id,
+          }),
         },
       });
 
@@ -366,12 +365,28 @@ export class ProcessesService {
   async createSubstage(
     stageId: string,
     createSubstageDto: CreateSubstageDto,
-    userId: string,
+    user: User,
   ) {
+    const userId = user.id;
     const { name, description, parentSubstageId } = createSubstageDto;
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const target = await tx.processStage.findUnique({
+          where: {
+            id: stageId,
+          },
+          select: {
+            processId: true,
+          },
+        });
+
+        if (!target) {
+          throw new NotFoundException('La etapa no fue encontrada.');
+        }
+
+        await this.lockAndValidateProcess(tx, target.processId, user);
+
         await lockStage(tx, stageId);
 
         const stage = await tx.processStage.findUnique({
@@ -447,7 +462,7 @@ export class ProcessesService {
     }
   }
 
-  async getSubStageById(subStageId: string) {
+  async getSubStageById(subStageId: string, user: User) {
     try {
       const substage = await this.prisma.processSubstage.findFirst({
         include: {
@@ -485,10 +500,25 @@ export class ProcessesService {
           status: {
             not: 'deleted',
           },
+          stage: {
+            status: {
+              not: 'deleted',
+            },
+            process: {
+              status: {
+                not: 'deleted',
+              },
+              ...(!user.roles.includes('admin') && {
+                managedByID: user.id,
+              }),
+            },
+          },
         },
       });
 
-      if (!substage) throw new Error('Substage not found.');
+      if (!substage) {
+        throw new NotFoundException('La subetapa no fue encontrada.');
+      }
 
       return substage;
     } catch (error: unknown) {
@@ -499,8 +529,9 @@ export class ProcessesService {
   async deactivateSubstage(
     substageId: string,
     deactivateSubstageDto: DeactivateSubstageDto,
-    userId: string,
+    user: User,
   ) {
+    const userId = user.id;
     try {
       const { reason } = deactivateSubstageDto;
 
@@ -511,13 +542,19 @@ export class ProcessesService {
           },
           select: {
             stageId: true,
+            stage: {
+              select: {
+                processId: true,
+              },
+            },
           },
         });
 
         if (!target) {
-          throw new BadRequestException('La subetapa no fue encontrada.');
+          throw new NotFoundException('La subetapa no fue encontrada.');
         }
 
+        await this.lockAndValidateProcess(tx, target.stage.processId, user);
         await lockStage(tx, target.stageId);
 
         const subStage = await tx.processSubstage.findFirst({
@@ -950,7 +987,9 @@ export class ProcessesService {
     }
   }
 
-  async closeSubstage(substageId: string, userId: string) {
+  async closeSubstage(substageId: string, user: User) {
+    const userId = user.id;
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const target = await tx.processSubstage.findUnique({
@@ -959,12 +998,19 @@ export class ProcessesService {
           },
           select: {
             stageId: true,
+            stage: {
+              select: {
+                processId: true,
+              },
+            },
           },
         });
 
         if (!target) {
-          throw new BadRequestException('La subetapa no fue encontrada.');
+          throw new NotFoundException('La subetapa no fue encontrada.');
         }
+
+        await this.lockAndValidateProcess(tx, target.stage.processId, user);
 
         await lockStage(tx, target.stageId);
 

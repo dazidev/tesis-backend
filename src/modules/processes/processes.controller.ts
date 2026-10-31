@@ -126,36 +126,39 @@ export class ProcessesController {
   @Post('stage/:stageId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   createSubstage(
-    @GetUser('id') userId: string,
+    @GetUser() user: User,
     @Param('stageId', ParseUUIDPipe) stageId: string,
     @Body() createSubstageDto: CreateSubstageDto,
   ) {
     return this.processesService.createSubstage(
       stageId,
       createSubstageDto,
-      userId,
+      user,
     );
   }
 
   //* GET SUBSTAGE BY ID
   @Get('substage/:subStageId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
-  getSubStageById(@Param('subStageId', ParseUUIDPipe) subStageId: string) {
-    return this.processesService.getSubStageById(subStageId);
+  getSubStageById(
+    @GetUser() user: User,
+    @Param('subStageId', ParseUUIDPipe) subStageId: string,
+  ) {
+    return this.processesService.getSubStageById(subStageId, user);
   }
 
-  //* DELETE/DEACTIVE SUBSTAGE
+  //* DELETE/DEACTIVATE SUBSTAGE
   @Patch('substage/:substageId/deactivate')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   deactivateSubstage(
-    @GetUser('id') userId: string,
+    @GetUser() user: User,
     @Body() deactivateSubstageDto: DeactivateSubstageDto,
     @Param('substageId', ParseUUIDPipe) substageId: string,
   ) {
     return this.processesService.deactivateSubstage(
       substageId,
       deactivateSubstageDto,
-      userId,
+      user,
     );
   }
 
@@ -163,10 +166,10 @@ export class ProcessesController {
   @Patch('substage/:substageId/close')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   closeSubstage(
-    @GetUser('id') userId: string,
+    @GetUser() user: User,
     @Param('substageId', ParseUUIDPipe) substageId: string,
   ) {
-    return this.processesService.closeSubstage(substageId, userId);
+    return this.processesService.closeSubstage(substageId, user);
   }
 
   //* CLOSE STAGE
