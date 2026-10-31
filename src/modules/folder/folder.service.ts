@@ -462,11 +462,12 @@ export class FolderService {
   }
 
   async uploadFile(
-    userId: string,
+    user: User,
     folderId: string,
     createDigitalFileDto: CreateDigitalFileDto,
     file: Express.Multer.File,
   ) {
+    const userId = user.id;
     let savedAbsolutePath: string | undefined;
     const { name, description } = createDigitalFileDto;
     try {
@@ -489,7 +490,7 @@ export class FolderService {
 
       return await this.prisma.$transaction(
         async (tx) => {
-          await lockStage(tx, target.stageId);
+          await this.lockAndValidateStage(tx, target.stageId, user);
 
           const folder = await tx.digitalFolder.findFirst({
             where: {
@@ -609,7 +610,7 @@ export class FolderService {
           throw new NotFoundException('Archivo no encontrado');
         }
 
-        await lockStage(tx, target.digitalFolder.stageId);
+        await this.lockAndValidateStage(tx, target.digitalFolder.stageId, user);
 
         const { digitalFile } = await this.getAccessibleFile(user, fileId, tx);
 
@@ -711,23 +712,26 @@ export class FolderService {
     };
   }*/
 
-  async deleteFile(userId: string, fileId: string) {
+  async deleteFile(user: User, fileId: string) {
+    const userId = user.id;
     let originalAbsolutePath: string | undefined;
     let movedAbsolutePath: string | undefined;
     let databaseUpdated = false;
 
     try {
       const target = await this.prisma.digitalFile.findFirst({
-        where: {
-          id: fileId,
-          deletedAt: null,
-        },
-
         select: {
           digitalFolder: {
             select: {
               stageId: true,
             },
+          },
+        },
+        where: {
+          id: fileId,
+          deletedAt: null,
+          digitalFolder: {
+            deletedAt: null,
           },
         },
       });
@@ -740,7 +744,7 @@ export class FolderService {
 
       const result = await this.prisma.$transaction(
         async (tx) => {
-          await lockStage(tx, stageId);
+          await this.lockAndValidateStage(tx, stageId, user);
 
           const digitalFile = await tx.digitalFile.findFirst({
             where: {
@@ -817,12 +821,16 @@ export class FolderService {
             await rename(originalAbsolutePath, movedAbsolutePath);
 
             await tx.digitalFile.update({
-              where: {
-                id: fileId,
-              },
               data: {
                 deletedAt: now,
                 storagePath: null,
+              },
+              where: {
+                id: fileId,
+                deletedAt: null,
+                digitalFolder: {
+                  deletedAt: null,
+                },
               },
             });
 
@@ -966,14 +974,6 @@ export class FolderService {
     tx: Prisma.TransactionClient = this.prisma,
   ) {
     const digitalFile = await tx.digitalFile.findFirst({
-      where: {
-        id: fileId,
-        deletedAt: null,
-
-        digitalFolder: {
-          deletedAt: null,
-        },
-      },
       select: {
         id: true,
         name: true,
@@ -998,6 +998,30 @@ export class FolderService {
               select: {
                 status: true,
               },
+            },
+          },
+        },
+      },
+      where: {
+        id: fileId,
+        deletedAt: null,
+
+        digitalFolder: {
+          deletedAt: null,
+
+          stage: {
+            status: {
+              not: 'deleted',
+            },
+
+            process: {
+              status: {
+                not: 'deleted',
+              },
+
+              ...(!user.roles.includes(ValidRoles.admin) && {
+                managedByID: user.id,
+              }),
             },
           },
         },

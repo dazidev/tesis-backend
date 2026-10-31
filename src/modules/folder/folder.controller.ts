@@ -88,8 +88,8 @@ export class FolderController {
     }),
   )
   uploadFile(
-    @GetUser('id')
-    userId: string,
+    @GetUser()
+    user: User,
 
     @Param('folderId', ParseUUIDPipe)
     folderId: string,
@@ -113,7 +113,7 @@ export class FolderController {
     file: Express.Multer.File,
   ) {
     return this.folderService.uploadFile(
-      userId,
+      user,
       folderId,
       createDigitalFileDto,
       file,
@@ -177,9 +177,9 @@ export class FolderController {
   @Delete('file/:fileId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   deleteFile(
-    @GetUser('id') userId: string,
+    @GetUser() user: User,
     @Param('fileId', ParseUUIDPipe) fileId: string,
   ) {
-    return this.folderService.deleteFile(userId, fileId);
+    return this.folderService.deleteFile(user, fileId);
   }
 }
