@@ -18,7 +18,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { FolderService } from './folder.service';
 import { Auth } from '../auth/decorators/auth.decorator';
-import { User, ValidRoles } from '../auth/interfaces';
+import { type User, ValidRoles } from '../auth/interfaces';
 import { GetUser } from '../auth/decorators';
 import {
   CreateDigitalFileDto,
@@ -36,29 +36,27 @@ export class FolderController {
   @Post(':stageId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   createFolder(
-    @GetUser('id') userId: string,
+    @GetUser() user: User,
     @Param('stageId', ParseUUIDPipe) stageId: string,
     @Body() createFolderDto: CreateFolderDto,
   ) {
-    return this.folderService.createFolder(userId, createFolderDto, stageId);
+    return this.folderService.createFolder(user, createFolderDto, stageId);
   }
 
   @Get(':id')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
-  getFolder(@Param('id', ParseUUIDPipe) id: string) {
-    return this.folderService.getFolder(id);
+  getFolder(@GetUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
+    return this.folderService.getFolder(id, user);
   }
 
   @Patch(':folderId')
   @Auth(ValidRoles.admin, ValidRoles.lawyer)
   updateFolder(
-    @GetUser('id') userId: string,
-    @Param('folderId', ParseUUIDPipe)
-    folderId: string,
-    @Body()
-    updateFolderDto: UpdateFolderDto,
+    @GetUser() user: User,
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @Body() updateFolderDto: UpdateFolderDto,
   ) {
-    return this.folderService.updateFolder(userId, folderId, updateFolderDto);
+    return this.folderService.updateFolder(user, folderId, updateFolderDto);
   }
 
   @Patch(':folderId/deactivate')

@@ -21,7 +21,7 @@ import {
 } from './dto';
 
 import { CreateLog } from '../logs/interfaces';
-import { lockStage, LogActions, LogEntities } from 'src/common';
+import { lockProcess, lockStage, LogActions, LogEntities } from 'src/common';
 import { type User, ValidRoles } from '../auth/interfaces';
 import { createReadStream, ReadStream } from 'fs';
 
@@ -34,14 +34,15 @@ export class FolderService {
   ) {}
 
   async createFolder(
-    userId: string,
+    user: User,
     createFolderDto: CreateFolderDto,
     stageId: string,
   ) {
+    const userId = user.id;
     try {
       const { name, description, substageId } = createFolderDto;
       return await this.prisma.$transaction(async (tx) => {
-        await lockStage(tx, stageId);
+        await this.lockAndValidateStage(tx, stageId, user);
 
         const stage = await tx.processStage.findFirst({
           where: {
@@ -103,7 +104,7 @@ export class FolderService {
     }
   }
 
-  async getFolder(id: string) {
+  async getFolder(id: string, user: User) {
     try {
       const folder = await this.prisma.digitalFolder.findFirst({
         select: {
@@ -125,8 +126,25 @@ export class FolderService {
         where: {
           id,
           deletedAt: null,
+          stage: {
+            status: {
+              not: 'deleted',
+            },
+            process: {
+              status: {
+                not: 'deleted',
+              },
+              ...(!user.roles.includes(ValidRoles.admin) && {
+                managedByID: user.id,
+              }),
+            },
+          },
         },
       });
+
+      if (!folder) {
+        throw new NotFoundException('Carpeta no encontrada.');
+      }
 
       return folder;
     } catch (error: unknown) {
@@ -135,10 +153,11 @@ export class FolderService {
   }
 
   async updateFolder(
-    userId: string,
+    user: User,
     folderId: string,
     updateFolderDto: UpdateFolderDto,
   ) {
+    const userId = user.id;
     try {
       const { name, description } = updateFolderDto;
 
@@ -158,7 +177,7 @@ export class FolderService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
-        await lockStage(tx, target.stageId);
+        await this.lockAndValidateStage(tx, target.stageId, user);
 
         const folder = await tx.digitalFolder.findFirst({
           where: {
@@ -260,7 +279,7 @@ export class FolderService {
 
       const result = await this.prisma.$transaction(
         async (tx) => {
-          await lockStage(tx, target.stageId);
+          await this.lockAndValidateStage(tx, target.stageId, user);
 
           const folder = await tx.digitalFolder.findFirst({
             where: {
@@ -1079,8 +1098,61 @@ export class FolderService {
     }
   }
 
+  private async lockAndValidateStage(
+    tx: Prisma.TransactionClient,
+    stageId: string,
+    user: User,
+  ) {
+    const isAdmin = user.roles.includes(ValidRoles.admin);
+
+    const where: Prisma.ProcessStageWhereInput = {
+      id: stageId,
+      status: {
+        not: 'deleted',
+      },
+      process: {
+        status: {
+          not: 'deleted',
+        },
+        ...(!isAdmin && {
+          managedByID: user.id,
+        }),
+      },
+    };
+
+    const target = await tx.processStage.findFirst({
+      where,
+      select: {
+        processId: true,
+      },
+    });
+
+    if (!target) {
+      throw new NotFoundException('Etapa no encontrada.');
+    }
+
+    await lockProcess(tx, target.processId);
+
+    await lockStage(tx, stageId);
+
+    const stage = await tx.processStage.findFirst({
+      where,
+      select: {
+        id: true,
+      },
+    });
+
+    if (!stage) {
+      throw new NotFoundException('Etapa no encontrada.');
+    }
+
+    return stage;
+  }
+
   private handleDBErrors(error): never {
-    if (
+    if (error instanceof HttpException) {
+      throw error;
+    } else if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
     ) {
