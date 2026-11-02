@@ -4,3 +4,4 @@ export { CreateSubstageDto } from './create-substage.dto';
 export { CreateStageDto } from './create-stage.dto';
 export { DeactivateSubstageDto } from './deactivate-substage.dto';
 export { DeactivateStageDto } from './deactivate-stage.dto';
+export { LinkProcessClientDto } from './link-process-client.dto';

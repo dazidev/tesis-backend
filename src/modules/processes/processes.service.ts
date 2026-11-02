@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   Injectable,
@@ -10,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateStageDto,
   CreateSubstageDto,
+  LinkProcessClientDto,
   ProcessDeactivateDto,
   ProcessDto,
 } from './dto';
@@ -1569,6 +1571,177 @@ export class ProcessesService {
         throw error;
       }
 
+      this.handleDBErrors(error);
+    }
+  }
+
+  async getProcessClients(processId: string, user: User) {
+    try {
+      const isAdmin = user.roles.includes('admin');
+
+      const process = await this.prisma.process.findFirst({
+        where: {
+          id: processId,
+          status: {
+            not: 'deleted',
+          },
+          ...(!isAdmin && {
+            managedByID: user.id,
+          }),
+        },
+        select: {
+          id: true,
+          caseFileNumber: true,
+          linkedClients: {
+            select: {
+              createdAt: true,
+              client: {
+                select: {
+                  id: true,
+                  name: true,
+                  lastname: true,
+                  email: true,
+                  status: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          },
+          invitations: {
+            where: {
+              role: 'client',
+            },
+            select: {
+              id: true,
+              toEmail: true,
+              isUsed: true,
+              usedAt: true,
+              createdAt: true,
+              expiresAt: true,
+              canceledAt: true,
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          },
+        },
+      });
+
+      if (!process) {
+        throw new NotFoundException('Proceso no encontrado.');
+      }
+
+      return process;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async linkProcessClient(
+    processId: string,
+    dto: LinkProcessClientDto,
+    user: User,
+  ) {
+    try {
+      const email = dto.email.trim().toLowerCase();
+
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockAndValidateProcess(tx, processId, user);
+
+        const client = await tx.user.findFirst({
+          where: {
+            email,
+            status: 'active',
+            roles: {
+              has: 'client',
+            },
+          },
+
+          select: {
+            id: true,
+          },
+        });
+
+        if (!client) {
+          throw new NotFoundException(
+            'No se encontró un cliente registrado y activo con ese correo.',
+          );
+        }
+
+        const existingRelation = await tx.processClient.findUnique({
+          where: {
+            processId_clientId: {
+              processId,
+              clientId: client.id,
+            },
+          },
+        });
+
+        if (existingRelation) {
+          throw new ConflictException(
+            'El cliente ya está vinculado al proceso.',
+          );
+        }
+
+        const relation = await tx.processClient.create({
+          data: {
+            processId,
+            clientId: client.id,
+          },
+        });
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+          action: LogActions.process.client.link,
+          entity: LogEntities.process,
+          affected: processId,
+          description: `Cliente vinculado: ${client.id}`,
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return relation;
+      });
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async unlinkProcessClient(processId: string, clientId: string, user: User) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockAndValidateProcess(tx, processId, user);
+
+        const result = await tx.processClient.deleteMany({
+          where: {
+            processId,
+            clientId,
+          },
+        });
+
+        if (result.count === 0) {
+          throw new NotFoundException(
+            'El cliente no está vinculado al proceso.',
+          );
+        }
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+          action: LogActions.process.client.unlink,
+          entity: LogEntities.process,
+          affected: processId,
+          description: `Cliente desvinculado: ${clientId}`,
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return {
+          success: true,
+        };
+      });
+    } catch (error: unknown) {
       this.handleDBErrors(error);
     }
   }

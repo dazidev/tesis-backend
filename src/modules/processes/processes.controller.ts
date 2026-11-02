@@ -17,6 +17,7 @@ import {
   CreateSubstageDto,
   DeactivateStageDto,
   DeactivateSubstageDto,
+  LinkProcessClientDto,
   ProcessDeactivateDto,
   ProcessDto,
 } from './dto';
@@ -200,5 +201,37 @@ export class ProcessesController {
     @Param('stageId', ParseUUIDPipe) stageId: string,
   ) {
     return this.processesService.finalizeProcess(stageId, user);
+  }
+
+  //* GET CLIENTS AND INVITATIONS OF A PROCESS
+  @Get(':id/clients')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  getProcessClients(
+    @GetUser() user: User,
+    @Param('id', ParseUUIDPipe) processId: string,
+  ) {
+    return this.processesService.getProcessClients(processId, user);
+  }
+
+  //* LINK EXISTING CLIENT
+  @Post(':id/clients')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  linkProcessClient(
+    @GetUser() user: User,
+    @Param('id', ParseUUIDPipe) processId: string,
+    @Body() dto: LinkProcessClientDto,
+  ) {
+    return this.processesService.linkProcessClient(processId, dto, user);
+  }
+
+  //* UNLINK CLIENT
+  @Delete(':id/clients/:clientId')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  unlinkProcessClient(
+    @GetUser() user: User,
+    @Param('id', ParseUUIDPipe) processId: string,
+    @Param('clientId', ParseUUIDPipe) clientId: string,
+  ) {
+    return this.processesService.unlinkProcessClient(processId, clientId, user);
   }
 }
