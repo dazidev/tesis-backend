@@ -17,10 +17,10 @@ export class UserRoleGuard implements CanActivate {
   canActivate(
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
-    const validRoles: string[] = this.reflector.get(
-      META_ROLE,
+    const validRoles = this.reflector.getAllAndOverride<string[]>(META_ROLE, [
       context.getHandler(),
-    );
+      context.getClass(),
+    ]);
 
     // todo: This is necessary?
     if (!validRoles) return true;

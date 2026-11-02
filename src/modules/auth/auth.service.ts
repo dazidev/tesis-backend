@@ -3,6 +3,7 @@ import {
   HttpException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -20,7 +21,7 @@ import {
   JwtRefreshPayload,
 } from './interfaces/jwt-payload.interface';
 import { User } from './interfaces';
-import { hashToken } from 'src/common';
+import { hashToken, lockProcess } from 'src/common';
 import { RegisterUserDto } from './dto/register-user.dto';
 
 @Injectable()
@@ -203,44 +204,6 @@ export class AuthService {
     }
   }
 
-  async sendInvitation(user: User, sendInvitationDto: SendInvitationDto) {
-    try {
-      const { toEmail, role } = sendInvitationDto;
-
-      const isLawyer = user.roles.includes('lawyer');
-
-      if (isLawyer && (role == 'admin' || role == 'lawyer'))
-        throw new UnauthorizedException(
-          'The role is not valid to perform this action',
-        );
-
-      const tokenId = uuidv4();
-
-      const now = new Date();
-      const expiresAt = new Date(now.setDate(now.getDate() + 7));
-
-      const invitation = await this.prisma.userInvitation.create({
-        data: {
-          toEmail,
-          role,
-          token: bcrypt.hashSync(tokenId, 10),
-          expiresAt,
-          createdById: user.id,
-        },
-      });
-
-      if (!invitation) throw new Error('The invitation insert failed');
-
-      const { token, ...result } = invitation;
-
-      return {
-        ...result,
-      };
-    } catch (error) {
-      this.handleDBErrors(error);
-    }
-  }
-
   async getUserInvitation(token: string) {
     try {
       const tokenHash = hashToken(token);
@@ -253,10 +216,23 @@ export class AuthService {
           expiresAt: true,
           isUsed: true,
         },
-        where: { token: tokenHash },
+        where: {
+          token: tokenHash,
+          canceledAt: null,
+        },
       });
 
-      if (!invitation) throw new Error('La invitación no se encuentra.');
+      if (!invitation) {
+        throw new BadRequestException('La invitación no existe.');
+      }
+
+      if (invitation.isUsed) {
+        throw new BadRequestException('La invitación ya fue utilizada.');
+      }
+
+      if (invitation.expiresAt <= new Date()) {
+        throw new BadRequestException('La invitación ha expirado.');
+      }
 
       return {
         ...invitation,
@@ -270,37 +246,143 @@ export class AuthService {
     try {
       const { name, lastname, password, invitationId } = registerUserDto;
 
-      const invitation = await this.prisma.userInvitation.findUnique({
-        where: { id: invitationId },
-      });
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-      if (!invitation)
-        throw new Error('No se encontró una invitacion con ese token.');
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const invitation = await tx.userInvitation.findUnique({
+            where: {
+              id: invitationId,
+            },
+            select: {
+              id: true,
+              toEmail: true,
+              role: true,
+              processId: true,
+              isUsed: true,
+              expiresAt: true,
+              canceledAt: true,
+            },
+          });
 
-      const user = await this.prisma.user.create({
-        data: {
-          name: name.trim(),
-          lastname: lastname.trim(),
-          email: invitation.toEmail.trim().toLowerCase(),
-          password: bcrypt.hashSync(password, 10),
-          roles: [invitation.role],
+          if (!invitation) {
+            throw new BadRequestException('La invitación no existe.');
+          }
+
+          if (invitation.canceledAt) {
+            throw new BadRequestException('La invitación ha sido cancelada.');
+          }
+
+          if (invitation.isUsed) {
+            throw new BadRequestException('La invitación ya fue utilizada.');
+          }
+
+          if (invitation.expiresAt <= new Date()) {
+            throw new BadRequestException('La invitación ha expirado.');
+          }
+
+          if (invitation.processId) {
+            if (invitation.role !== 'client') {
+              throw new BadRequestException(
+                'La invitación del proceso debe ser para un cliente.',
+              );
+            }
+
+            const process = await tx.process.findFirst({
+              where: {
+                id: invitation.processId,
+                status: {
+                  not: 'deleted',
+                },
+              },
+              select: {
+                id: true,
+              },
+            });
+
+            if (!process) {
+              throw new NotFoundException(
+                'El proceso vinculado no está disponible.',
+              );
+            }
+
+            await lockProcess(tx, invitation.processId);
+
+            const currentProcess = await tx.process.findFirst({
+              where: {
+                id: invitation.processId,
+                status: {
+                  not: 'deleted',
+                },
+              },
+              select: {
+                id: true,
+              },
+            });
+
+            if (!currentProcess) {
+              throw new NotFoundException(
+                'El proceso vinculado no está disponible.',
+              );
+            }
+          }
+
+          const now = new Date();
+
+          const claimedInvitation = await tx.userInvitation.updateMany({
+            where: {
+              id: invitation.id,
+              isUsed: false,
+              canceledAt: null,
+              expiresAt: {
+                gt: now,
+              },
+            },
+            data: {
+              isUsed: true,
+              usedAt: now,
+            },
+          });
+
+          if (claimedInvitation.count !== 1) {
+            throw new BadRequestException(
+              'La invitación ya no está disponible.',
+            );
+          }
+
+          const user = await tx.user.create({
+            data: {
+              name: name.trim(),
+              lastname: lastname.trim(),
+              email: invitation.toEmail.trim().toLowerCase(),
+              password: hashedPassword,
+              roles: [invitation.role],
+            },
+            select: {
+              id: true,
+              name: true,
+              lastname: true,
+              email: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          });
+
+          if (invitation.processId) {
+            await tx.processClient.create({
+              data: {
+                processId: invitation.processId,
+                clientId: user.id,
+              },
+            });
+          }
+
+          return user;
         },
-        select: {
-          id: true,
-          name: true,
-          lastname: true,
-          email: true,
-          createdAt: true,
-          updatedAt: true,
+        {
+          timeout: 15000,
         },
-      });
-
-      await this.prisma.userInvitation.update({
-        data: { isUsed: true, usedAt: new Date(Date.now()) },
-        where: { id: invitationId },
-      });
-
-      return;
+      );
     } catch (error: unknown) {
       this.handleDBErrors(error);
     }

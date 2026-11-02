@@ -1,13 +1,18 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserInivitationDto } from './dto/user-invitation.dto';
 import {
   generateInvitationToken,
   hashToken,
+  lockProcess,
   LogActions,
   LogEntities,
 } from 'src/common';
@@ -17,6 +22,7 @@ import { ConfigService } from '@nestjs/config';
 import { UserDeactivateDto } from './dto/user-deactivate.dto';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
+import { type User, ValidRoles } from '../auth/interfaces';
 
 @Injectable()
 export class AdminService {
@@ -27,37 +33,96 @@ export class AdminService {
     private logsService: LogsService,
   ) {}
 
-  async sendUserInvitation(
-    userInivitationDto: UserInivitationDto,
-    userId: string,
-  ) {
+  async sendUserInvitation(userInvitationDto: UserInivitationDto, user: User) {
     try {
-      const { toEmail, role, createdById } = userInivitationDto;
+      const { toEmail, role, processId } = userInvitationDto;
 
+      const isAdmin = user.roles.includes(ValidRoles.admin);
+      const isLawyer = user.roles.includes(ValidRoles.lawyer);
+
+      if (!isAdmin && !isLawyer) {
+        throw new ForbiddenException(
+          'No tiene permisos para invitar usuarios.',
+        );
+      }
+
+      if (!isAdmin && role !== ValidRoles.client) {
+        throw new ForbiddenException(
+          'Los abogados únicamente pueden invitar clientes.',
+        );
+      }
+
+      if (!isAdmin && !processId) {
+        throw new BadRequestException(
+          'Debe seleccionar un proceso para invitar al cliente.',
+        );
+      }
+
+      if (processId && role !== ValidRoles.client) {
+        throw new BadRequestException(
+          'Solo se pueden vincular clientes a los procesos.',
+        );
+      }
+
+      const email = toEmail.trim().toLowerCase();
       const token = generateInvitationToken();
 
       await this.prisma.$transaction(async (tx) => {
-        const hashedToken = hashToken(token);
+        if (processId) {
+          const where: Prisma.ProcessWhereInput = {
+            id: processId,
+            status: {
+              not: 'deleted',
+            },
+            ...(!isAdmin && {
+              managedByID: user.id,
+            }),
+          };
 
-        const invitation = await tx.userInvitation.create({
+          const existingProcess = await tx.process.findFirst({
+            where,
+            select: {
+              id: true,
+            },
+          });
+
+          if (!existingProcess) {
+            throw new NotFoundException('Proceso no encontrado.');
+          }
+
+          await lockProcess(tx, processId);
+
+          const process = await tx.process.findFirst({
+            where,
+            select: {
+              id: true,
+            },
+          });
+
+          if (!process) {
+            throw new NotFoundException('Proceso no encontrado.');
+          }
+        }
+
+        await tx.userInvitation.create({
           data: {
-            token: hashedToken,
-            toEmail,
+            token: hashToken(token),
+            toEmail: email,
             role,
-            createdById,
-            expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), // 7 dias
+            processId: processId ?? null,
+            createdById: user.id,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           },
         });
 
-        if (!invitation)
-          throw new Error('Hubo un problema al guardar la invitación.');
-
         const dataLog: CreateLog = {
-          userId,
-          entity: LogEntities.user,
+          userId: user.id,
           action: LogActions.common.invitationUser,
-          affected: toEmail,
-          description: `Rol: ${role}`,
+          entity: LogEntities.user,
+          affected: email,
+          description: processId
+            ? `Invitación de cliente al proceso ${processId}`
+            : `Invitación de usuario con rol ${role}`,
         };
 
         await this.logsService.create(dataLog, tx);
@@ -65,9 +130,22 @@ export class AdminService {
 
       const invitationLink = `/auth/register?token=${token}`;
 
-      const msj = `Para registrarse use el siguiente link: ${this.configService.getOrThrow<string>('API_LINK') + invitationLink}`;
+      const msj = `Para registrarse use el siguiente link: ${
+        this.configService.getOrThrow<string>('API_LINK') + invitationLink
+      }`;
 
-      await this.brevoService.sendEmail(toEmail, 'Invitación de registro', msj);
+      const emailSent = await this.brevoService.sendEmail(
+        email,
+        'Invitación de registro',
+        msj,
+      );
+
+      if (!emailSent) {
+        throw new InternalServerErrorException(
+          'La invitación fue registrada, pero no se pudo enviar el correo.',
+        );
+      }
+
       return {
         invitationLink,
       };
@@ -114,8 +192,194 @@ export class AdminService {
     }
   }
 
+  async resendUserInvitation(invitationId: string, user: User) {
+    try {
+      const token = generateInvitationToken();
+
+      const invitation = await this.prisma.$transaction(async (tx) => {
+        const target = await this.getAccessibleProcessInvitation(
+          tx,
+          invitationId,
+          user,
+        );
+
+        if (target.isUsed || target.canceledAt) {
+          throw new ConflictException(
+            'La invitación ya fue utilizada o cancelada.',
+          );
+        }
+
+        const now = new Date();
+        const resendLimit = new Date(now.getTime() - 60_000);
+
+        if (target.updatedAt > resendLimit) {
+          throw new BadRequestException(
+            'Debe esperar al menos un minuto para reenviar.',
+          );
+        }
+
+        const result = await tx.userInvitation.updateMany({
+          where: {
+            id: target.id,
+            isUsed: false,
+            canceledAt: null,
+            updatedAt: { lte: resendLimit },
+          },
+          data: {
+            token: hashToken(token),
+            expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+            updatedAt: now,
+          },
+        });
+
+        if (result.count !== 1) {
+          throw new ConflictException('La invitación ya no está disponible.');
+        }
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+          entity: LogEntities.user,
+          action: LogActions.common.resendInvitation,
+          affected: target.id,
+          description: `Proceso: ${target.processId}`,
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return {
+          toEmail: target.toEmail,
+        };
+      });
+
+      const invitationLink = `/auth/register?token=${token}`;
+
+      const msj = `Para registrarse use el siguiente link: ${
+        this.configService.getOrThrow<string>('API_LINK') + invitationLink
+      }`;
+
+      const sent = await this.brevoService.sendEmail(
+        invitation.toEmail,
+        'Invitación de registro',
+        msj,
+      );
+
+      if (!sent) {
+        throw new InternalServerErrorException(
+          'Se renovó la invitación, pero no fue posible enviar el correo.',
+        );
+      }
+
+      return {
+        success: true,
+      };
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async cancelUserInvitation(invitationId: string, user: User) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const invitation = await this.getAccessibleProcessInvitation(
+          tx,
+          invitationId,
+          user,
+        );
+
+        if (invitation.isUsed || invitation.canceledAt) {
+          throw new ConflictException(
+            'La invitación ya fue utilizada o cancelada.',
+          );
+        }
+
+        const result = await tx.userInvitation.updateMany({
+          where: {
+            id: invitation.id,
+            isUsed: false,
+            canceledAt: null,
+          },
+          data: {
+            canceledAt: new Date(),
+          },
+        });
+
+        if (result.count !== 1) {
+          throw new ConflictException('La invitación ya no está disponible.');
+        }
+
+        const dataLog: CreateLog = {
+          userId: user.id,
+          entity: LogEntities.user,
+          action: LogActions.common.cancelInvitation,
+          affected: invitation.id,
+          description: `Proceso: ${invitation.processId}`,
+        };
+
+        await this.logsService.create(dataLog, tx);
+
+        return { success: true };
+      });
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  private async getAccessibleProcessInvitation(
+    tx: Prisma.TransactionClient,
+    invitationId: string,
+    user: User,
+  ) {
+    const isAdmin = user.roles.includes(ValidRoles.admin);
+    const isLawyer = user.roles.includes(ValidRoles.lawyer);
+
+    if (!isAdmin && !isLawyer) {
+      throw new ForbiddenException('No tiene permisos.');
+    }
+
+    const where: Prisma.UserInvitationWhereInput = {
+      id: invitationId,
+      role: 'client',
+      processId: { not: null },
+      process: {
+        status: { not: 'deleted' },
+        ...(!isAdmin && { managedByID: user.id }),
+      },
+    };
+
+    const target = await tx.userInvitation.findFirst({
+      where,
+      select: { processId: true },
+    });
+
+    if (!target?.processId) {
+      throw new NotFoundException('Invitación no encontrada.');
+    }
+
+    await lockProcess(tx, target.processId);
+
+    const invitation = await tx.userInvitation.findFirst({
+      where,
+      select: {
+        id: true,
+        processId: true,
+        toEmail: true,
+        isUsed: true,
+        canceledAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!invitation?.processId) {
+      throw new NotFoundException('Invitación no encontrada.');
+    }
+
+    return invitation;
+  }
+
   private handleDBErrors(error: unknown): never {
-    if (
+    if (error instanceof HttpException) {
+      throw error;
+    } else if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
     ) {

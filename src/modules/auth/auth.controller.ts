@@ -53,15 +53,6 @@ export class AuthController {
     return await this.authService.getRefreshTokenWeb(user, sessionId);
   }
 
-  @Post('send-invitation')
-  @Auth(ValidRoles.admin, ValidRoles.lawyer)
-  sendInvitation(
-    @GetUser() user: User,
-    @Body() sendInvitationDto: SendInvitationDto,
-  ) {
-    return this.authService.sendInvitation(user, sendInvitationDto);
-  }
-
   @Get('invitation/:token')
   getUserInvitation(@Param('token') token: string) {
     return this.authService.getUserInvitation(token);

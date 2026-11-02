@@ -8,29 +8,48 @@ import {
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { Auth } from '../auth/decorators/auth.decorator';
-import { ValidRoles } from '../auth/interfaces';
+import { type User, ValidRoles } from '../auth/interfaces';
 import { UserDeactivateDto, UserInivitationDto } from './dto';
 import { GetUser } from '../auth/decorators';
 
-@Auth(ValidRoles.admin)
 @Controller('admin')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Post('user-invitation')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
   sendUserInvitation(
-    @GetUser('id') userId: string,
-    @Body() userInivitationDto: UserInivitationDto,
+    @GetUser() user: User,
+    @Body() userInvitationDto: UserInivitationDto,
   ) {
-    return this.adminService.sendUserInvitation(userInivitationDto, userId);
+    return this.adminService.sendUserInvitation(userInvitationDto, user);
   }
 
   @Patch('users/:id/deactivate')
+  @Auth(ValidRoles.admin)
   userDeactivate(
     @GetUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() userDeactivateDto: UserDeactivateDto,
   ) {
     return this.adminService.userDeactivate(id, userDeactivateDto, userId);
+  }
+
+  @Patch('user-invitations/:invitationId/cancel')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  cancelUserInvitation(
+    @GetUser() user: User,
+    @Param('invitationId', ParseUUIDPipe) invitationId: string,
+  ) {
+    return this.adminService.cancelUserInvitation(invitationId, user);
+  }
+
+  @Post('user-invitations/:invitationId/resend')
+  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  resendUserInvitation(
+    @GetUser() user: User,
+    @Param('invitationId', ParseUUIDPipe) invitationId: string,
+  ) {
+    return this.adminService.resendUserInvitation(invitationId, user);
   }
 }

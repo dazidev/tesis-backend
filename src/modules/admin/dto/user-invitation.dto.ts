@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsUUID } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { ValidRoles } from 'src/modules/auth/interfaces';
 
 export class UserInivitationDto {
@@ -8,6 +8,7 @@ export class UserInivitationDto {
   @IsEnum(ValidRoles)
   readonly role!: ValidRoles;
 
+  @IsOptional()
   @IsUUID()
-  readonly createdById!: string;
+  readonly processId?: string;
 }
