@@ -4,6 +4,8 @@ export const LogActions = {
   },
   common: {
     invitationUser: 'INVITATION_USER',
+    cancelInvitation: 'CANCEL_INVITATION',
+    resendInvitation: 'RESEND_INVITATION',
   },
   process: {
     create: 'CREATE_PROCESS',
@@ -21,6 +23,10 @@ export const LogActions = {
       create: 'CREATE_SUBSTAGE',
       close: 'CLOSE_SUBSTAGE',
       delete: 'DELETE_SUBSTAGE',
+    },
+    client: {
+      link: 'LINK_PROCESS_CLIENT',
+      unlink: 'UNLINK_PROCESS_CLIENT',
     },
   },
   folder: {

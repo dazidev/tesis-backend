@@ -20,7 +20,7 @@ enum UserStatus {
 }
 
 model User {
-  id               String            @default(uuid()) @id
+  id               String            @id @default(uuid())
   name             String
   lastname         String
   email            String            @unique
@@ -46,12 +46,14 @@ model User {
   digitalFiles     DigitalFile[]
   tasksCreated     Task[]           @relation("TaskCreatedBy")
 
+  linkedProcesses  ProcessClient[]  @relation("ClientProcessAccess")
+
   @@index([roles])
   @@map("users")
 }
 
 model UserSession {
-  id            String     @default(uuid()) @id
+  id            String     @id @default(uuid())
   refreshToken  String
   expiresAt     DateTime   @db.Timestamptz()
   isRevoked     Boolean    @default(false)
@@ -73,26 +75,33 @@ model UserSession {
 }
 
 model UserInvitation {
-  id          String     @default(uuid()) @id
+  id          String     @id @default(uuid())
   token       String     @unique
   toEmail     String
   role        UserRole
   expiresAt   DateTime   @db.Timestamptz()
   isUsed      Boolean    @default(false)
-  usedAt      DateTime?  @db.Timestamptz()
+  usedAt      DateTime?
+
   createdById String
   createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  processId   String?
+  process     Process?  @relation("ProcessInvitations", fields: [processId], references: [id], onDelete: Cascade)
+
   createdAt   DateTime   @default(now()) @db.Timestamptz()
   updatedAt   DateTime   @updatedAt @db.Timestamptz()
+  canceledAt  DateTime?  @db.Timestamptz()
 
   @@index([toEmail])
+  @@index([processId])
   @@map("user_invitations")
 }
 
 model Log {
-  id          String    @default(uuid()) @id
+  id          String    @id @default(uuid())
   userId      String?
-  user        User?    @relation("LogUser" , fields: [userId], references: [id], onDelete: SetNull)
+  user        User?    @relation("LogUser", fields: [userId], references: [id], onDelete: SetNull)
   affected    String?
   entity      String?
   action      String
@@ -112,7 +121,7 @@ enum ProcessType {
 }
 
 model Defendant {
-  id        String    @default(uuid()) @id
+  id        String    @id @default(uuid())
   name      String
   lastname  String
   birthDate DateTime
@@ -132,23 +141,26 @@ enum ProcessStatus {
 }
 
 model Process {
-  id             String          @default(uuid()) @id
+  id             String            @id @default(uuid())
   courtNumber    String
   caseFileNumber String
   type           ProcessType
   status         ProcessStatus
-  plaintiffs     User[]         @relation("Plaintiff")
-  defendantId    String          @unique
-  defendant      Defendant      @relation(fields: [defendantId], references: [id], onDelete: Cascade)
+  plaintiffs     User[]           @relation("Plaintiff")
+  defendantId    String            @unique
+  defendant      Defendant        @relation(fields: [defendantId], references: [id], onDelete: Cascade)
   managedByID    String
-  managedBy      User           @relation("ManagedBy", fields: [managedByID], references: [id])
+  managedBy      User             @relation("ManagedBy", fields: [managedByID], references: [id])
 
   createdById    String
-  createdBy      User           @relation("CreatedBy", fields: [createdById], references: [id])
-  createdAt      DateTime        @default(now()) @db.Timestamptz()
-  updatedAt      DateTime        @updatedAt @db.Timestamptz()
+  createdBy      User             @relation("CreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime          @default(now()) @db.Timestamptz()
+  updatedAt      DateTime          @updatedAt @db.Timestamptz()
 
   stages         ProcessStage[]
+
+  invitations    UserInvitation[] @relation("ProcessInvitations")
+  linkedClients  ProcessClient[]  @relation("ProcessClientAccess")
 
   @@index([courtNumber])
   @@index([caseFileNumber])
@@ -164,7 +176,7 @@ enum StageStatus {
 }
 
 model ProcessStage {
-  id                String             @default(uuid()) @id
+  id                String             @id @default(uuid())
   name              String
   description       String
   status            StageStatus
@@ -190,17 +202,17 @@ enum SubstageStatus {
 }
 
 model ProcessSubstage {
-  id                String             @default(uuid()) @id
+  id                String             @id @default(uuid())
   name              String
   description       String
   status            SubstageStatus
   order             Int
 
   stageId           String
-  stage             ProcessStage      @relation( fields: [stageId],references: [id])
+  stage             ProcessStage      @relation(fields: [stageId], references: [id])
 
   parentSubstageId  String?
-  parentSubstage    ProcessSubstage?  @relation("SubstageHierarchy",fields: [parentSubstageId],references: [id])
+  parentSubstage    ProcessSubstage?  @relation("SubstageHierarchy", fields: [parentSubstageId], references: [id])
 
   childrenSubstages ProcessSubstage[] @relation("SubstageHierarchy")
 
@@ -214,7 +226,7 @@ model ProcessSubstage {
 }
 
 model DigitalFolder {
-  id           String            @default(uuid()) @id
+  id           String            @id @default(uuid())
   name         String
   description  String
   createdAt    DateTime          @default(now()) @db.Timestamptz()
@@ -225,10 +237,10 @@ model DigitalFolder {
   createdBy    User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
   stageId      String
-  stage        ProcessStage     @relation(fields: [stageId],references: [id])
+  stage        ProcessStage     @relation(fields: [stageId], references: [id])
 
   substageId   String?
-  substage     ProcessSubstage? @relation(fields: [substageId],references: [id])
+  substage     ProcessSubstage? @relation(fields: [substageId], references: [id])
 
   digitalFiles DigitalFile[]
 
@@ -238,7 +250,7 @@ model DigitalFolder {
 }
 
 model DigitalFile {
-  id              String          @default(uuid()) @id
+  id              String          @id @default(uuid())
   name            String
   description     String
 
@@ -255,13 +267,13 @@ model DigitalFile {
   createdBy       User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
   digitalFolderId String
-  digitalFolder   DigitalFolder? @relation(fields: [digitalFolderId],references: [id])
+  digitalFolder   DigitalFolder? @relation(fields: [digitalFolderId], references: [id])
 
   @@map("digital_file")
 }
 
 model Task {
-  id          String            @default(uuid()) @id
+  id          String            @id @default(uuid())
   description String
   dueDate     DateTime          @db.Timestamptz()
   completedAt DateTime?         @db.Timestamptz()
@@ -282,6 +294,19 @@ model Task {
   @@index([stageId])
   @@index([substageId])
   @@index([deletedAt, completedAt, dueDate])
-
   @@map("tasks")
+}
+
+model ProcessClient {
+  processId String
+  clientId  String
+
+  process   Process  @relation("ProcessClientAccess", fields: [processId], references: [id], onDelete: Cascade)
+  client    User     @relation("ClientProcessAccess", fields: [clientId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz()
+
+  @@id([processId, clientId])
+  @@index([clientId])
+  @@map("process_clients")
 }
