@@ -75,23 +75,25 @@ model UserSession {
 }
 
 model UserInvitation {
-  id          String     @id @default(uuid())
-  token       String     @unique
-  toEmail     String
-  role        UserRole
-  expiresAt   DateTime   @db.Timestamptz()
-  isUsed      Boolean    @default(false)
-  usedAt      DateTime?
+  id               String     @id @default(uuid())
+  token            String     @unique
+  toEmail          String
+  role             UserRole
+  expiresAt        DateTime   @db.Timestamptz()
+  isUsed           Boolean    @default(false)
+  usedAt           DateTime?  @db.Timestamptz()
+  emailSentAt      DateTime?  @db.Timestamptz()
+  lastEmailErrorAt DateTime?  @db.Timestamptz()
 
-  createdById String
-  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdById      String
+  createdBy        User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
-  processId   String?
-  process     Process?  @relation("ProcessInvitations", fields: [processId], references: [id], onDelete: Cascade)
+  processId        String?
+  process          Process?  @relation("ProcessInvitations", fields: [processId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime   @default(now()) @db.Timestamptz()
-  updatedAt   DateTime   @updatedAt @db.Timestamptz()
-  canceledAt  DateTime?  @db.Timestamptz()
+  createdAt        DateTime   @default(now()) @db.Timestamptz()
+  updatedAt        DateTime   @updatedAt @db.Timestamptz()
+  canceledAt       DateTime?  @db.Timestamptz()
 
   @@index([toEmail])
   @@index([processId])

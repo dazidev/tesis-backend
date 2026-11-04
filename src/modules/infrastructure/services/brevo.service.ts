@@ -20,9 +20,18 @@ export class BrevoService {
   }
 
   async sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+    const senderName =
+      this.configService.getOrThrow<string>('BREVO_SENDER_NAME');
+
+    const senderEmail =
+      this.configService.getOrThrow<string>('BREVO_SENDER_EMAIL');
+
     try {
       const info = await this.transporter.sendMail({
-        from: `"PROWASH 365" <no-reply@prowash365.com>`,
+        from: {
+          name: senderName,
+          address: senderEmail,
+        },
         to,
         subject,
         html,

@@ -67,7 +67,7 @@ export class AdminService {
       const email = toEmail.trim().toLowerCase();
       const token = generateInvitationToken();
 
-      await this.prisma.$transaction(async (tx) => {
+      const invitationId = await this.prisma.$transaction(async (tx) => {
         if (processId) {
           const where: Prisma.ProcessWhereInput = {
             id: processId,
@@ -104,7 +104,42 @@ export class AdminService {
           }
         }
 
-        await tx.userInvitation.create({
+        await tx.$queryRaw<{ locked: number }[]>`
+          SELECT 1 AS locked
+          FROM pg_advisory_xact_lock(hashtext(${email}))
+        `;
+
+        const existingUser = await tx.user.findUnique({
+          where: { email },
+          select: { id: true },
+        });
+
+        if (existingUser) {
+          throw new ConflictException(
+            'El correo ya pertenece a una cuenta registrada. ' +
+              'Si es un cliente, utilice la opción Vincular cliente existente.',
+          );
+        }
+
+        const pendingInvitation = await tx.userInvitation.findFirst({
+          where: {
+            toEmail: email,
+            isUsed: false,
+            canceledAt: null,
+            expiresAt: {
+              gt: new Date(),
+            },
+          },
+          select: { id: true },
+        });
+
+        if (pendingInvitation) {
+          throw new ConflictException(
+            'Ya existe una invitación vigente para este correo.',
+          );
+        }
+
+        const invitation = await tx.userInvitation.create({
           data: {
             token: hashToken(token),
             toEmail: email,
@@ -126,6 +161,8 @@ export class AdminService {
         };
 
         await this.logsService.create(dataLog, tx);
+
+        return invitation.id;
       });
 
       const invitationLink = `/auth/register?token=${token}`;
@@ -139,6 +176,21 @@ export class AdminService {
         'Invitación de registro',
         msj,
       );
+
+      await this.prisma.userInvitation.updateMany({
+        where: {
+          id: invitationId,
+          token: hashToken(token),
+        },
+        data: emailSent
+          ? {
+              emailSentAt: new Date(),
+              lastEmailErrorAt: null,
+            }
+          : {
+              lastEmailErrorAt: new Date(),
+            },
+      });
 
       if (!emailSent) {
         throw new InternalServerErrorException(
@@ -209,6 +261,34 @@ export class AdminService {
           );
         }
 
+        const existingUser = await tx.user.findUnique({
+          where: {
+            email: target.toEmail.trim().toLowerCase(),
+          },
+          select: { id: true },
+        });
+
+        if (existingUser) {
+          throw new ConflictException('El usuario ya está registrado.');
+        }
+
+        const otherInvitation = await tx.userInvitation.findFirst({
+          where: {
+            id: { not: target.id },
+            toEmail: target.toEmail,
+            isUsed: false,
+            canceledAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          select: { id: true },
+        });
+
+        if (otherInvitation) {
+          throw new ConflictException(
+            'Existe otra invitación vigente para este correo.',
+          );
+        }
+
         const now = new Date();
         const resendLimit = new Date(now.getTime() - 60_000);
 
@@ -229,6 +309,8 @@ export class AdminService {
             token: hashToken(token),
             expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
             updatedAt: now,
+            emailSentAt: null,
+            lastEmailErrorAt: null,
           },
         });
 
@@ -247,6 +329,7 @@ export class AdminService {
         await this.logsService.create(dataLog, tx);
 
         return {
+          id: target.id,
           toEmail: target.toEmail,
         };
       });
@@ -262,6 +345,21 @@ export class AdminService {
         'Invitación de registro',
         msj,
       );
+
+      await this.prisma.userInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          token: hashToken(token),
+        },
+        data: sent
+          ? {
+              emailSentAt: new Date(),
+              lastEmailErrorAt: null,
+            }
+          : {
+              lastEmailErrorAt: new Date(),
+            },
+      });
 
       if (!sent) {
         throw new InternalServerErrorException(
