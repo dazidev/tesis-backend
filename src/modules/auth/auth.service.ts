@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   Injectable,
   InternalServerErrorException,
@@ -89,6 +90,15 @@ export class AuthService {
         24; // SECONDS
 
       const expiresAt = new Date(Date.now() + 1000 * refreshTokenExpiresIn);
+
+      const canAccessWeb =
+        user.roles.includes('admin') || user.roles.includes('lawyer');
+
+      if (!canAccessWeb) {
+        throw new ForbiddenException(
+          'El usuario no tiene acceso al panel web.',
+        );
+      }
 
       const initialSession = await this.prisma.userSession.create({
         data: {
@@ -244,15 +254,16 @@ export class AuthService {
 
   async registerUser(registerUserDto: RegisterUserDto) {
     try {
-      const { name, lastname, password, invitationId } = registerUserDto;
+      const { name, lastname, password, token } = registerUserDto;
 
+      const tokenHash = hashToken(token);
       const hashedPassword = await bcrypt.hash(password, 10);
 
       return await this.prisma.$transaction(
         async (tx) => {
           const invitation = await tx.userInvitation.findUnique({
             where: {
-              id: invitationId,
+              token: tokenHash,
             },
             select: {
               id: true,
@@ -266,7 +277,9 @@ export class AuthService {
           });
 
           if (!invitation) {
-            throw new BadRequestException('La invitación no existe.');
+            throw new BadRequestException(
+              'La invitación no existe o fue reemplazada.',
+            );
           }
 
           if (invitation.canceledAt) {
@@ -291,13 +304,9 @@ export class AuthService {
             const process = await tx.process.findFirst({
               where: {
                 id: invitation.processId,
-                status: {
-                  not: 'deleted',
-                },
+                status: { not: 'deleted' },
               },
-              select: {
-                id: true,
-              },
+              select: { id: true },
             });
 
             if (!process) {
@@ -311,13 +320,9 @@ export class AuthService {
             const currentProcess = await tx.process.findFirst({
               where: {
                 id: invitation.processId,
-                status: {
-                  not: 'deleted',
-                },
+                status: { not: 'deleted' },
               },
-              select: {
-                id: true,
-              },
+              select: { id: true },
             });
 
             if (!currentProcess) {
@@ -332,11 +337,10 @@ export class AuthService {
           const claimedInvitation = await tx.userInvitation.updateMany({
             where: {
               id: invitation.id,
+              token: tokenHash,
               isUsed: false,
               canceledAt: null,
-              expiresAt: {
-                gt: now,
-              },
+              expiresAt: { gt: now },
             },
             data: {
               isUsed: true,
@@ -379,9 +383,7 @@ export class AuthService {
 
           return user;
         },
-        {
-          timeout: 15000,
-        },
+        { timeout: 15000 },
       );
     } catch (error: unknown) {
       this.handleDBErrors(error);

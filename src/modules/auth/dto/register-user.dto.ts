@@ -1,7 +1,6 @@
 import {
   IsNotEmpty,
   IsString,
-  IsUUID,
   Matches,
   MaxLength,
   MinLength,
@@ -26,6 +25,8 @@ export class RegisterUserDto {
   })
   readonly password!: string;
 
-  @IsUUID()
-  readonly invitationId!: string;
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  readonly token!: string;
 }

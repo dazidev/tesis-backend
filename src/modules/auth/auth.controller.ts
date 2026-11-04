@@ -1,11 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import {
-  CreateUserDto,
-  LoginUserDto,
-  RegisterUserDto,
-  SendInvitationDto,
-} from './dto';
+import { LoginUserDto, RegisterUserDto, SendInvitationDto } from './dto';
 import { AuthGuard } from '@nestjs/passport';
 import { GetUser, RawHeaders } from './decorators';
 import type { User } from './interfaces/user';
@@ -19,11 +14,6 @@ import { GetRealIP } from './decorators/get-ip.decorator';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('register')
-  createUser(@Body() createUserDto: CreateUserDto) {
-    return this.authService.create(createUserDto);
-  }
-
   @Post('register-user')
   registerUser(@Body() registerUserDto: RegisterUserDto) {
     return this.authService.registerUser(registerUserDto);
@@ -31,7 +21,6 @@ export class AuthController {
 
   @Post('login-web')
   async loginUser(@Body() loginUserDto: LoginUserDto, @GetRealIP() ip: string) {
-    console.log('ping');
     return await this.authService.loginWeb(loginUserDto, ip);
   }
 
