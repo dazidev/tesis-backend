@@ -816,7 +816,23 @@ export class ProcessesService {
 
   async getStageById(stageId: string, user: User) {
     try {
+      const isAdmin = user.roles.includes('admin');
+
       const stage = await this.prisma.processStage.findFirst({
+        where: {
+          id: stageId,
+          status: {
+            not: 'deleted',
+          },
+          process: {
+            status: {
+              not: 'deleted',
+            },
+            ...(!isAdmin && {
+              managedByID: user.id,
+            }),
+          },
+        },
         include: {
           digitalFolders: {
             where: {
@@ -840,30 +856,12 @@ export class ProcessesService {
           },
           tasks: {
             where: {
-              id: stageId,
-              status: {
-                not: 'deleted',
-              },
-              process: {
-                status: {
-                  not: 'deleted',
-                },
-                ...(!user.roles.includes('admin') && {
-                  managedByID: user.id,
-                }),
-              },
+              deletedAt: null,
+              substageId: null,
             },
-
             orderBy: {
               dueDate: 'asc',
             },
-          },
-        },
-
-        where: {
-          id: stageId,
-          status: {
-            not: 'deleted',
           },
         },
       });
@@ -1621,6 +1619,8 @@ export class ProcessesService {
               createdAt: true,
               expiresAt: true,
               canceledAt: true,
+              emailSentAt: true,
+              lastEmailErrorAt: true,
             },
             orderBy: {
               createdAt: 'desc',

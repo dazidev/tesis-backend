@@ -473,14 +473,18 @@ export class TaskService {
   }
 
   private handleDBErrors(error: unknown): never {
+    if (error instanceof HttpException) {
+      throw error;
+    }
+
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      throw new BadRequestException('Error en la operación de base de datos');
+      throw new BadRequestException('Error en la operación de base de datos.');
     }
 
     if (error instanceof Error) {
       throw new BadRequestException(error.message);
     }
 
-    throw new InternalServerErrorException('Error desconocido');
+    throw new InternalServerErrorException('Error desconocido.');
   }
 }
