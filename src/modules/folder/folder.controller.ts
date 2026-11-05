@@ -121,7 +121,7 @@ export class FolderController {
   }
 
   @Get('file/:fileId/view')
-  @Auth(ValidRoles.admin, ValidRoles.lawyer)
+  @Auth(ValidRoles.admin, ValidRoles.lawyer, ValidRoles.client)
   @Header('Cache-Control', 'private, no-store')
   @Header('Pragma', 'no-cache')
   @Header('X-Content-Type-Options', 'nosniff')

@@ -973,19 +973,52 @@ export class FolderService {
     fileId: string,
     tx: Prisma.TransactionClient = this.prisma,
   ) {
+    const isAdmin = user.roles.includes(ValidRoles.admin);
+    const isLawyer = user.roles.includes(ValidRoles.lawyer);
+    const isClient = user.roles.includes(ValidRoles.client);
+
+    if (!isAdmin && !isLawyer && !isClient) {
+      throw new NotFoundException('Archivo no encontrado');
+    }
+
+    const accessConditions: Prisma.ProcessWhereInput[] = [];
+
+    if (isLawyer) {
+      accessConditions.push({
+        managedByID: user.id,
+      });
+    }
+
+    if (isClient) {
+      accessConditions.push({
+        linkedClients: {
+          some: {
+            clientId: user.id,
+          },
+        },
+      });
+    }
+
+    const processWhere: Prisma.ProcessWhereInput = {
+      status: {
+        not: 'deleted',
+      },
+      ...(!isAdmin && {
+        OR: accessConditions,
+      }),
+    };
+
     const digitalFile = await tx.digitalFile.findFirst({
       select: {
         id: true,
         name: true,
         storagePath: true,
         mimeType: true,
-
         digitalFolder: {
           select: {
             stage: {
               select: {
                 status: true,
-
                 process: {
                   select: {
                     managedByID: true,
@@ -993,7 +1026,6 @@ export class FolderService {
                 },
               },
             },
-
             substage: {
               select: {
                 status: true,
@@ -1005,23 +1037,30 @@ export class FolderService {
       where: {
         id: fileId,
         deletedAt: null,
-
         digitalFolder: {
-          deletedAt: null,
-
-          stage: {
-            status: {
-              not: 'deleted',
-            },
-
-            process: {
-              status: {
-                not: 'deleted',
+          is: {
+            deletedAt: null,
+            OR: [
+              {
+                substageId: null,
               },
-
-              ...(!user.roles.includes(ValidRoles.admin) && {
-                managedByID: user.id,
-              }),
+              {
+                substage: {
+                  status: {
+                    not: 'deleted',
+                  },
+                },
+              },
+            ],
+            stage: {
+              is: {
+                status: {
+                  not: 'deleted',
+                },
+                process: {
+                  is: processWhere,
+                },
+              },
             },
           },
         },
@@ -1029,20 +1068,6 @@ export class FolderService {
     });
 
     if (!digitalFile) {
-      throw new NotFoundException('Archivo no encontrado');
-    }
-
-    const isAdmin = user.roles.includes(ValidRoles.admin);
-
-    const isLawyer = user.roles.includes(ValidRoles.lawyer);
-
-    const processManagerId =
-      digitalFile.digitalFolder?.stage.process.managedByID;
-
-    //! todo: Validar esta validación del abogado.
-    const lawyerHasAccess = isLawyer && processManagerId === user.id;
-
-    if (!isAdmin && !lawyerHasAccess) {
       throw new NotFoundException('Archivo no encontrado');
     }
 
