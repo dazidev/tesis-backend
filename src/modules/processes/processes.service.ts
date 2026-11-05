@@ -1746,6 +1746,219 @@ export class ProcessesService {
     }
   }
 
+  //* MOBILE
+  async getMyProcesses(user: User) {
+    try {
+      const processes = await this.prisma.process.findMany({
+        where: {
+          status: {
+            not: 'deleted',
+          },
+          linkedClients: {
+            some: {
+              clientId: user.id,
+            },
+          },
+        },
+        select: {
+          id: true,
+          courtNumber: true,
+          caseFileNumber: true,
+          type: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          defendant: {
+            select: {
+              name: true,
+              lastname: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+      console.log(processes);
+      return processes;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async getMyProcessById(processId: string, user: User) {
+    try {
+      const process = await this.prisma.process.findFirst({
+        where: {
+          id: processId,
+          status: {
+            not: 'deleted',
+          },
+          linkedClients: {
+            some: {
+              clientId: user.id,
+            },
+          },
+        },
+        select: {
+          id: true,
+          caseFileNumber: true,
+          courtNumber: true,
+          type: true,
+          status: true,
+          defendant: {
+            select: {
+              name: true,
+              lastname: true,
+            },
+          },
+          stages: {
+            where: {
+              status: {
+                not: 'deleted',
+              },
+            },
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              status: true,
+              order: true,
+              main: true,
+            },
+            orderBy: {
+              order: 'asc',
+            },
+          },
+        },
+      });
+
+      if (!process) {
+        throw new NotFoundException('Proceso no encontrado.');
+      }
+
+      const stageIds = process.stages.map((stage) => stage.id);
+
+      const substages =
+        stageIds.length === 0
+          ? []
+          : await this.prisma.processSubstage.findMany({
+              where: {
+                stageId: {
+                  in: stageIds,
+                },
+                status: {
+                  not: 'deleted',
+                },
+              },
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                status: true,
+                order: true,
+                stageId: true,
+                parentSubstageId: true,
+              },
+              orderBy: {
+                order: 'asc',
+              },
+            });
+
+      const substagesByStage = buildTree(substages);
+
+      return {
+        ...process,
+
+        stages: process.stages.map((stage) => ({
+          ...stage,
+          childrenSubstages: substagesByStage[stage.id] ?? [],
+        })),
+      };
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  async getMyProcessDocuments(processId: string, user: User) {
+    try {
+      const process = await this.prisma.process.findFirst({
+        where: {
+          id: processId,
+          status: {
+            not: 'deleted',
+          },
+          linkedClients: {
+            some: {
+              clientId: user.id,
+            },
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!process) {
+        throw new NotFoundException('Proceso no encontrado.');
+      }
+
+      const folders = await this.prisma.digitalFolder.findMany({
+        where: {
+          deletedAt: null,
+          stage: {
+            processId,
+            status: {
+              not: 'deleted',
+            },
+          },
+          OR: [
+            {
+              substageId: null,
+            },
+            {
+              substage: {
+                status: {
+                  not: 'deleted',
+                },
+              },
+            },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          stageId: true,
+          substageId: true,
+          digitalFiles: {
+            where: {
+              deletedAt: null,
+            },
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              size: true,
+              createdAt: true,
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      });
+
+      return folders;
+    } catch (error: unknown) {
+      this.handleDBErrors(error);
+    }
+  }
+
+  //* PRIVATE METHODS
   private async syncOpenSubstages(
     tx: Prisma.TransactionClient,
     stageId: string,
