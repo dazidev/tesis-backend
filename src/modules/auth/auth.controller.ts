@@ -42,6 +42,29 @@ export class AuthController {
     return await this.authService.getRefreshTokenWeb(user, sessionId);
   }
 
+  @Post('login-mobile')
+  async loginMobile(
+    @Body() loginUserDto: LoginUserDto,
+    @GetRealIP() ip: string,
+  ) {
+    return this.authService.loginMobile(loginUserDto, ip);
+  }
+
+  @Post('refresh-mobile')
+  @UseGuards(AuthGuard(AuthStrategy.REFRESH))
+  refreshMobile(
+    @GetUser() user: User,
+    @GetUser('sessionId') sessionId: string,
+  ) {
+    return this.authService.getRefreshTokenWeb(user, sessionId);
+  }
+
+  @Post('logout-mobile')
+  @UseGuards(AuthGuard(AuthStrategy.REFRESH))
+  logoutMobile(@GetUser() user: User, @GetUser('sessionId') sessionId: string) {
+    return this.authService.logout(user, sessionId);
+  }
+
   @Get('invitation/:token')
   getUserInvitation(@Param('token') token: string) {
     return this.authService.getUserInvitation(token);

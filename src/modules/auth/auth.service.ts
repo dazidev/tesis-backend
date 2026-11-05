@@ -64,6 +64,18 @@ export class AuthService {
   }
 
   async loginWeb(loginUserDto: LoginUserDto, ip: string) {
+    return this.loginWithPlatform(loginUserDto, ip, 'web');
+  }
+
+  async loginMobile(loginUserDto: LoginUserDto, ip: string) {
+    return this.loginWithPlatform(loginUserDto, ip, 'mobile');
+  }
+
+  private async loginWithPlatform(
+    loginUserDto: LoginUserDto,
+    ip: string,
+    platform: 'web' | 'mobile',
+  ) {
     try {
       const { email, password: pass, deviceId, deviceInfo } = loginUserDto;
 
@@ -91,12 +103,14 @@ export class AuthService {
 
       const expiresAt = new Date(Date.now() + 1000 * refreshTokenExpiresIn);
 
-      const canAccessWeb =
-        user.roles.includes('admin') || user.roles.includes('lawyer');
+      const canAccess =
+        platform === 'web'
+          ? user.roles.includes('admin') || user.roles.includes('lawyer')
+          : user.roles.includes('client');
 
-      if (!canAccessWeb) {
+      if (!canAccess) {
         throw new ForbiddenException(
-          'El usuario no tiene acceso al panel web.',
+          'El usuario no tiene acceso a esta aplicación.',
         );
       }
 
