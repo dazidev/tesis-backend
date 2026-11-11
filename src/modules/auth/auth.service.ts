@@ -106,7 +106,7 @@ export class AuthService {
       const canAccess =
         platform === 'web'
           ? user.roles.includes('admin') || user.roles.includes('lawyer')
-          : user.roles.includes('client');
+          : user.roles.includes('client') || user.roles.includes('lawyer');
 
       if (!canAccess) {
         throw new ForbiddenException(
