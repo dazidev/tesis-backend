@@ -5,6 +5,9 @@ import { PassportModule } from '@nestjs/passport';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
+import { mkdtemp, writeFile, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { AuthController } from '../src/modules/auth/auth.controller';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { JwtAccessStrategy } from '../src/modules/auth/strategies/jwt-access.strategy';
@@ -26,8 +29,9 @@ import { AdminService } from '../src/modules/admin/admin.service';
 
 jest.mock('uuid', () => ({ v4: () => 'test-refresh-nonce' }));
 
-describe('Mobile access and existing permissions', () => {
+describe('Web and mobile access and existing permissions', () => {
   let app: INestApplication;
+  let filesRoot: string;
   const resourceId = '11111111-1111-4111-8111-111111111111';
   const password = 'MobileAccessTest123!';
   const users = ['lawyer', 'client', 'admin', 'inactive'].map((role) => ({
@@ -66,12 +70,20 @@ describe('Mobile access and existing permissions', () => {
       findUnique: jest.fn(async ({ where }) => sessions.get(where.id)),
     },
     process: {
-      findMany: jest.fn(async () => []),
-      findFirst: jest.fn(async (_query: unknown) => null),
+      findMany: jest.fn(async (_query: unknown): Promise<unknown[]> => []),
+      findFirst: jest.fn(async (_query: unknown): Promise<unknown> => null),
+    },
+    digitalFile: {
+      findFirst: jest.fn(async (_query: unknown): Promise<unknown> => null),
     },
   };
 
   beforeAll(async () => {
+    filesRoot = await mkdtemp(join(tmpdir(), 'tesis-client-access-'));
+    await writeFile(
+      join(filesRoot, 'closed-stage.pdf'),
+      '%PDF-1.4\nTest document\n',
+    );
     const module = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -82,6 +94,7 @@ describe('Mobile access and existing permissions', () => {
               JWT_REFRESH_SECRET: 'test-refresh',
               TIME_ACCESS_TOKEN: '20m',
               TIME_REFRESH_TOKEN: '7d',
+              FILES_DIR: filesRoot,
             }),
           ],
         }),
@@ -101,11 +114,11 @@ describe('Mobile access and existing permissions', () => {
       providers: [
         AuthService,
         ProcessesService,
+        FolderService,
         JwtAccessStrategy,
         JwtRefreshStrategy,
         { provide: PrismaService, useValue: prisma },
         { provide: LogsService, useValue: { create: jest.fn() } },
-        { provide: FolderService, useValue: {} },
         { provide: TaskService, useValue: {} },
         { provide: UserService, useValue: {} },
         { provide: AdminService, useValue: {} },
@@ -121,6 +134,7 @@ describe('Mobile access and existing permissions', () => {
 
   afterAll(async () => {
     await app?.close();
+    if (filesRoot) await rm(filesRoot, { recursive: true, force: true });
   });
 
   const login = (role: string, platform = 'mobile') =>
@@ -160,10 +174,129 @@ describe('Mobile access and existing permissions', () => {
     await login('inactive').expect(401);
   });
 
-  it('preserves web login restrictions', async () => {
-    await login('lawyer', 'web').expect(201);
-    await login('admin', 'web').expect(201);
-    await login('client', 'web').expect(403);
+  it.each(['lawyer', 'admin', 'client'])(
+    'allows active %s web login, refresh and logout',
+    async (role) => {
+      const result = await login(role, 'web').expect(201);
+      const refreshed = await request(app.getHttpServer())
+        .post('/api/auth/refresh-web')
+        .send({ refreshToken: result.body.refreshToken })
+        .expect(201);
+      expect(refreshed.body.user.roles).toContain(role);
+      await request(app.getHttpServer())
+        .post('/api/auth/logout-web')
+        .send({ refreshToken: refreshed.body.refreshToken })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/api/auth/refresh-web')
+        .send({ refreshToken: refreshed.body.refreshToken })
+        .expect(401);
+    },
+  );
+
+  it('rejects inactive accounts on web', async () => {
+    await login('inactive', 'web').expect(401);
+  });
+
+  it('filters client queries by ProcessClient even with a web session', async () => {
+    const result = await login('client', 'web').expect(201);
+    await request(app.getHttpServer())
+      .get('/api/mobile/processes')
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .expect(200);
+    expect(prisma.process.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: {
+          status: { not: 'deleted' },
+          linkedClients: { some: { clientId: 'client' } },
+        },
+      }),
+    );
+    for (const suffix of ['', '/documents']) {
+      await request(app.getHttpServer())
+        .get(`/api/mobile/processes/${resourceId}${suffix}`)
+        .auth(result.body.accessToken, { type: 'bearer' })
+        .expect(404);
+      expect(prisma.process.findFirst.mock.calls.at(-1)?.[0]).toMatchObject({
+        where: {
+          id: resourceId,
+          status: { not: 'deleted' },
+          linkedClients: { some: { clientId: 'client' } },
+        },
+      });
+    }
+  });
+
+  it('checks the linked client before reading a PDF', async () => {
+    const result = await login('client', 'web').expect(201);
+    await request(app.getHttpServer())
+      .get(`/api/folder/file/${resourceId}/view`)
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .expect(404);
+    expect(prisma.digitalFile.findFirst.mock.calls.at(-1)?.[0]).toMatchObject({
+      where: {
+        id: resourceId,
+        deletedAt: null,
+        digitalFolder: {
+          is: {
+            deletedAt: null,
+            stage: {
+              is: {
+                status: { not: 'deleted' },
+                process: {
+                  is: {
+                    status: { not: 'deleted' },
+                    OR: [{ linkedClients: { some: { clientId: 'client' } } }],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('serves a linked client PDF from closed containers without allowing edits', async () => {
+    const result = await login('client', 'web').expect(201);
+    prisma.digitalFile.findFirst.mockResolvedValueOnce({
+      id: resourceId,
+      name: 'Closed document',
+      storagePath: 'closed-stage.pdf',
+      mimeType: 'application/pdf',
+      digitalFolder: {
+        stage: { status: 'closed', process: { managedByID: 'lawyer' } },
+        substage: { status: 'closed' },
+      },
+    });
+    await request(app.getHttpServer())
+      .get(`/api/folder/file/${resourceId}/view`)
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .expect(200)
+      .expect('Content-Type', 'application/pdf')
+      .expect('Cache-Control', 'private, no-store');
+    await request(app.getHttpServer())
+      .patch(`/api/folder/file/${resourceId}`)
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .send({ name: 'Changed', description: 'Not allowed' })
+      .expect(403);
+  });
+
+  it('keeps web clients out of management and administrative endpoints', async () => {
+    const result = await login('client', 'web').expect(201);
+    for (const path of [
+      '/api/processes',
+      `/api/processes/${resourceId}`,
+      `/api/processes/${resourceId}/clients`,
+      '/api/user',
+      '/api/logs',
+      '/api/logs/filters',
+    ]) {
+      await request(app.getHttpServer())
+        .get(path)
+        .auth(result.body.accessToken, { type: 'bearer' })
+        .expect(403);
+    }
   });
 
   it('lists only processes managed by the lawyer and checks ownership on detail', async () => {
@@ -206,8 +339,8 @@ describe('Mobile access and existing permissions', () => {
     ['delete', `/api/folder/file/${resourceId}`],
     ['post', `/api/task/${resourceId}`],
     ['post', '/api/admin/user-invitation'],
-  ] as const)('client cannot %s %s', async (method, path) => {
-    const result = await login('client').expect(201);
+  ] as const)('web client cannot %s %s', async (method, path) => {
+    const result = await login('client', 'web').expect(201);
     await request(app.getHttpServer())
       [method](path)
       .auth(result.body.accessToken, { type: 'bearer' })
