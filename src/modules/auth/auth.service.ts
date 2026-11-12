@@ -108,7 +108,9 @@ export class AuthService {
           ? user.roles.includes('admin') ||
             user.roles.includes('lawyer') ||
             user.roles.includes('client')
-          : user.roles.includes('client') || user.roles.includes('lawyer');
+          : user.roles.includes('client') ||
+            user.roles.includes('lawyer') ||
+            user.roles.includes('admin');
 
       if (!canAccess) {
         throw new ForbiddenException(

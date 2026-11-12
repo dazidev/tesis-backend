@@ -147,7 +147,7 @@ describe('Web and mobile access and existing permissions', () => {
         deviceInfo: 'Automated test',
       });
 
-  it.each(['lawyer', 'client'])(
+  it.each(['lawyer', 'client', 'admin'])(
     'allows active %s mobile login, refresh and logout',
     async (role) => {
       const result = await login(role).expect(201);
@@ -169,8 +169,7 @@ describe('Web and mobile access and existing permissions', () => {
     },
   );
 
-  it('rejects admin-only and inactive accounts on mobile', async () => {
-    await login('admin').expect(403);
+  it('rejects inactive accounts on mobile', async () => {
     await login('inactive').expect(401);
   });
 
@@ -329,6 +328,39 @@ describe('Web and mobile access and existing permissions', () => {
         .auth(result.body.accessToken, { type: 'bearer' })
         .expect(403);
     }
+  });
+
+  it('allows a mobile admin to query all processes without a lawyer ownership filter', async () => {
+    const result = await login('admin').expect(201);
+    await request(app.getHttpServer())
+      .get('/api/processes')
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .expect(200);
+    expect(prisma.process.findMany).toHaveBeenLastCalledWith({ where: {} });
+    await request(app.getHttpServer())
+      .get(`/api/processes/${resourceId}`)
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .expect(404);
+    const query = prisma.process.findFirst.mock.calls.at(-1)?.[0];
+    expect(query).toMatchObject({
+      where: { id: resourceId, status: { not: 'deleted' } },
+    });
+    expect(query).not.toHaveProperty('where.managedByID');
+  });
+
+  it('keeps mobile clients out of management and administrative endpoints', async () => {
+    const result = await login('client').expect(201);
+    for (const path of ['/api/processes', '/api/user', '/api/logs']) {
+      await request(app.getHttpServer())
+        .get(path)
+        .auth(result.body.accessToken, { type: 'bearer' })
+        .expect(403);
+    }
+    await request(app.getHttpServer())
+      .post('/api/processes')
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .send({})
+      .expect(403);
   });
 
   it.each([
