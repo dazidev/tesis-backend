@@ -44,8 +44,33 @@ describe('Web and mobile access and existing permissions', () => {
     password: bcrypt.hashSync(password, 4),
   }));
   const sessions = new Map<string, Record<string, unknown>>();
+  const creationTransaction = {
+    defendant: {
+      create: jest.fn(async () => ({ id: resourceId })),
+    },
+    process: {
+      create: jest.fn(async ({ data }) => ({ id: resourceId, ...data })),
+    },
+  };
   const prisma = {
+    $transaction: jest.fn(async (operation) =>
+      operation({
+        ...creationTransaction,
+        user: prisma.user,
+        $queryRaw: jest.fn(async () => []),
+      }),
+    ),
     user: {
+      findFirst: jest.fn(async (_query: unknown): Promise<unknown> => null),
+      findMany: jest.fn(async ({ where, select }) =>
+        users
+          .filter((user) => user.roles.includes(where.roles.has))
+          .map((user) =>
+            Object.fromEntries(
+              Object.keys(select).map((key) => [key, user[key]]),
+            ),
+          ),
+      ),
       findUnique: jest.fn(async ({ where }) =>
         users.find((user) =>
           where.email ? user.email === where.email : user.id === where.id,
@@ -120,7 +145,7 @@ describe('Web and mobile access and existing permissions', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: LogsService, useValue: { create: jest.fn() } },
         { provide: TaskService, useValue: {} },
-        { provide: UserService, useValue: {} },
+        UserService,
         { provide: AdminService, useValue: {} },
       ],
     }).compile();
@@ -361,6 +386,99 @@ describe('Web and mobile access and existing permissions', () => {
       .auth(result.body.accessToken, { type: 'bearer' })
       .send({})
       .expect(403);
+  });
+
+  it('returns lawyer status without credentials for the admin responsible picker', async () => {
+    const result = await login('admin').expect(201);
+    const response = await request(app.getHttpServer())
+      .get('/api/user?role=lawyer')
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .expect(200);
+    expect(response.body).toEqual([
+      expect.objectContaining({ id: 'lawyer', status: 'active' }),
+      expect.objectContaining({ id: 'inactive', status: 'inactive' }),
+    ]);
+    for (const user of response.body) {
+      expect(Object.keys(user).sort()).toEqual(
+        ['id', 'name', 'lastname', 'email', 'roles', 'status'].sort(),
+      );
+    }
+  });
+
+  const processInput = {
+    caseFileNumber: 'TEST-2026',
+    courtNumber: 'Juzgado de prueba',
+    type: 'testate',
+    defendant: {
+      name: 'Persona',
+      lastname: 'De prueba',
+      birthDate: '1950-01-01T00:00:00.000Z',
+      deathDate: '2025-01-01T00:00:00.000Z',
+    },
+  };
+
+  it('uses the admin account when no responsible lawyer is selected', async () => {
+    const result = await login('admin').expect(201);
+    const response = await request(app.getHttpServer())
+      .post('/api/processes')
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .send(processInput)
+      .expect(201);
+    expect(response.body).toMatchObject({
+      managedByID: 'admin',
+      createdById: 'admin',
+      status: 'created',
+    });
+  });
+
+  it('lets an admin assign a new process to an active lawyer', async () => {
+    const result = await login('admin').expect(201);
+    prisma.user.findFirst.mockResolvedValueOnce({ id: resourceId });
+    const response = await request(app.getHttpServer())
+      .post('/api/processes')
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .send({ ...processInput, managedByID: resourceId })
+      .expect(201);
+    expect(prisma.user.findFirst).toHaveBeenLastCalledWith({
+      where: { id: resourceId, status: 'active', roles: { has: 'lawyer' } },
+      select: { id: true },
+    });
+    expect(response.body).toMatchObject({
+      managedByID: resourceId,
+      createdById: 'admin',
+      status: 'created',
+    });
+  });
+
+  it('rejects a responsible user who is no longer an active lawyer before creating anything', async () => {
+    const result = await login('admin').expect(201);
+    const previousCreations =
+      creationTransaction.defendant.create.mock.calls.length;
+    const response = await request(app.getHttpServer())
+      .post('/api/processes')
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .send({ ...processInput, managedByID: resourceId })
+      .expect(400);
+    expect(response.body.message).toBe(
+      'El responsable seleccionado debe ser un abogado activo.',
+    );
+    expect(creationTransaction.defendant.create).toHaveBeenCalledTimes(
+      previousCreations,
+    );
+  });
+
+  it('prevents a lawyer from assigning a new process to another user', async () => {
+    const result = await login('lawyer').expect(201);
+    const previousCreations =
+      creationTransaction.defendant.create.mock.calls.length;
+    await request(app.getHttpServer())
+      .post('/api/processes')
+      .auth(result.body.accessToken, { type: 'bearer' })
+      .send({ ...processInput, managedByID: resourceId })
+      .expect(403);
+    expect(creationTransaction.defendant.create).toHaveBeenCalledTimes(
+      previousCreations,
+    );
   });
 
   it.each([

@@ -1,5 +1,6 @@
 export const LogActions = {
   admin: {
+    updateUser: 'UPDATE_USER',
     deactivateUser: 'DEACTIVATE_USER',
   },
   common: {

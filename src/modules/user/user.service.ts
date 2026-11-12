@@ -18,7 +18,16 @@ export class UserService {
 
   async findAll() {
     try {
-      const users = await this.prisma.user.findMany();
+      const users = await this.prisma.user.findMany({
+        select: {
+          id: true,
+          name: true,
+          lastname: true,
+          email: true,
+          roles: true,
+          status: true,
+        },
+      });
 
       if (!users) throw new Error('Users not found.');
 
@@ -37,6 +46,7 @@ export class UserService {
           lastname: true,
           email: true,
           roles: true,
+          status: true,
         },
         where: { roles: { has: role } },
       });

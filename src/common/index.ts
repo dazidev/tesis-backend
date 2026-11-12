@@ -3,3 +3,4 @@ export * from './utils/tokens.util';
 export * from './utils/build-tree.util';
 export * from './utils/lock-stage.util';
 export * from './utils/lock-process.util';
+export * from './utils/lock-user-administration.util';

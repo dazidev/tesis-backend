@@ -157,6 +157,7 @@ export class LogsService {
           entity: LogEntities.user,
           actions: [
             LogActions.admin.deactivateUser,
+            LogActions.admin.updateUser,
             LogActions.common.invitationUser,
           ],
         },

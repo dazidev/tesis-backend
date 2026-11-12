@@ -22,6 +22,7 @@ import {
   LogEntities,
   lockStage,
   lockProcess,
+  lockUserAdministration,
 } from 'src/common';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
@@ -41,42 +42,44 @@ export class ProcessesService {
         processDto;
 
       const userId = user.id;
-      const isAdmin = user.roles.includes('admin');
-
-      if (!isAdmin && managedByID && managedByID !== userId) {
-        throw new ForbiddenException(
-          'Un abogado no puede asignar procesos a otros usuarios.',
-        );
-      }
-
-      const managerId = isAdmin ? managedByID || userId : userId;
-
-      if (isAdmin && managedByID) {
-        const manager = await this.prisma.user.findFirst({
-          where: {
-            id: managedByID,
-            status: 'active',
-            roles: {
-              has: 'lawyer',
-            },
-          },
-          select: {
-            id: true,
-          },
-        });
-
-        if (!manager) {
-          throw new BadRequestException(
-            'El responsable seleccionado debe ser un abogado activo.',
-          );
-        }
-      }
 
       const { name, lastname, birthDate, deathDate } = defendant;
 
       let process;
 
       await this.prisma.$transaction(async (tx) => {
+        await lockUserAdministration(tx);
+        const actor = await tx.user.findUnique({
+          where: { id: userId },
+          select: { roles: true, status: true },
+        });
+        if (
+          actor?.status !== 'active' ||
+          !actor.roles.some((role) => role === 'admin' || role === 'lawyer')
+        ) {
+          throw new ForbiddenException('Su cuenta ya no puede crear procesos.');
+        }
+        const isAdmin = actor.roles.includes('admin');
+        if (!isAdmin && managedByID && managedByID !== userId) {
+          throw new ForbiddenException(
+            'Un abogado no puede asignar procesos a otros usuarios.',
+          );
+        }
+        const managerId = isAdmin ? managedByID || userId : userId;
+        if (isAdmin && managedByID) {
+          const manager = await tx.user.findFirst({
+            where: {
+              id: managedByID,
+              status: 'active',
+              roles: { has: 'lawyer' },
+            },
+            select: { id: true },
+          });
+          if (!manager)
+            throw new BadRequestException(
+              'El responsable seleccionado debe ser un abogado activo.',
+            );
+        }
         const defendantId = await tx.defendant.create({
           data: {
             name,

@@ -13,6 +13,7 @@ import {
   generateInvitationToken,
   hashToken,
   lockProcess,
+  lockUserAdministration,
   LogActions,
   LogEntities,
 } from 'src/common';
@@ -20,6 +21,7 @@ import { Prisma } from 'src/generated/prisma/client';
 import { BrevoService } from '../infrastructure/services/brevo.service';
 import { ConfigService } from '@nestjs/config';
 import { UserDeactivateDto } from './dto/user-deactivate.dto';
+import { UserUpdateDto } from './dto/user-update.dto';
 import { LogsService } from '../logs/logs.service';
 import { CreateLog } from '../logs/interfaces';
 import { type User, ValidRoles } from '../auth/interfaces';
@@ -215,12 +217,21 @@ export class AdminService {
       const { type, reason } = userDeactivateDto;
 
       await this.prisma.$transaction(async (tx) => {
+        await lockUserAdministration(tx);
+        await this.assertActiveAdministrator(tx, userId);
         const affectedUserExist = await tx.user.findUnique({
           where: { id: affectedId },
-          select: { id: true, name: true, lastname: true, email: true },
+          select: { id: true, roles: true, status: true },
         });
 
-        if (!affectedUserExist) throw new Error('Usuario no encontrado');
+        if (!affectedUserExist)
+          throw new NotFoundException('Usuario no encontrado.');
+        if (
+          affectedUserExist.status === 'active' &&
+          affectedUserExist.roles.includes('admin')
+        ) {
+          await this.assertAnotherActiveAdministrator(tx, affectedId);
+        }
 
         await tx.user.update({
           data: { status: type },
@@ -241,6 +252,133 @@ export class AdminService {
       return;
     } catch (error: unknown) {
       this.handleDBErrors(error);
+    }
+  }
+
+  async updateUser(affectedId: string, dto: UserUpdateDto, userId: string) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await lockUserAdministration(tx);
+        await this.assertActiveAdministrator(tx, userId);
+        const current = await tx.user.findUnique({
+          where: { id: affectedId },
+          select: {
+            id: true,
+            name: true,
+            lastname: true,
+            email: true,
+            roles: true,
+            status: true,
+          },
+        });
+        if (!current) throw new NotFoundException('Usuario no encontrado.');
+
+        if (
+          current.status === 'active' &&
+          current.roles.includes('admin') &&
+          !dto.roles.includes('admin')
+        ) {
+          await this.assertAnotherActiveAdministrator(tx, affectedId);
+        }
+        if (!dto.roles.includes('admin') && !dto.roles.includes('lawyer')) {
+          const activeProcess = await tx.process.findFirst({
+            where: {
+              managedByID: affectedId,
+              status: { in: ['created', 'opened'] },
+            },
+            select: { id: true },
+          });
+          if (activeProcess) {
+            throw new ConflictException(
+              'No puede quitar el acceso de abogado: el usuario tiene procesos pendientes o en curso.',
+            );
+          }
+        }
+
+        const rolesChanged =
+          current.roles.length !== dto.roles.length ||
+          current.roles.some((role) => !dto.roles.includes(role));
+        const changedFields = [
+          current.name !== dto.name && 'nombre',
+          current.lastname !== dto.lastname && 'apellidos',
+          current.email !== dto.email && 'correo electrónico',
+          rolesChanged && 'roles',
+        ].filter(Boolean);
+        if (!changedFields.length) return current;
+
+        const updated = await tx.user.update({
+          where: { id: affectedId },
+          data: {
+            name: dto.name,
+            lastname: dto.lastname,
+            email: dto.email,
+            roles: dto.roles,
+          },
+          select: {
+            id: true,
+            name: true,
+            lastname: true,
+            email: true,
+            roles: true,
+            status: true,
+          },
+        });
+        await this.logsService.create(
+          {
+            userId,
+            affected: affectedId,
+            entity: LogEntities.user,
+            action: LogActions.admin.updateUser,
+            description: `Campos modificados: ${changedFields.join(', ')}.`,
+          },
+          tx,
+        );
+        return updated;
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'El correo electrónico ya pertenece a otra cuenta.',
+        );
+      }
+      this.handleDBErrors(error);
+    }
+  }
+
+  private async assertActiveAdministrator(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ) {
+    const actor = await tx.user.findUnique({
+      where: { id: userId },
+      select: { roles: true, status: true },
+    });
+    if (actor?.status !== 'active' || !actor.roles.includes('admin')) {
+      throw new ForbiddenException(
+        'Solo un administrador activo puede modificar usuarios.',
+      );
+    }
+  }
+
+  private async assertAnotherActiveAdministrator(
+    tx: Prisma.TransactionClient,
+    affectedId: string,
+  ) {
+    const otherAdmin = await tx.user.findFirst({
+      where: {
+        id: { not: affectedId },
+        status: 'active',
+        roles: { has: 'admin' },
+      },
+      select: { id: true },
+    });
+    if (!otherAdmin) {
+      throw new ConflictException(
+        'Debe conservar al menos un administrador activo en el sistema.',
+      );
     }
   }
 

@@ -9,7 +9,7 @@ import {
 import { AdminService } from './admin.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { type User, ValidRoles } from '../auth/interfaces';
-import { UserDeactivateDto, UserInivitationDto } from './dto';
+import { UserDeactivateDto, UserInivitationDto, UserUpdateDto } from './dto';
 import { GetUser } from '../auth/decorators';
 
 @Controller('admin')
@@ -33,6 +33,16 @@ export class AdminController {
     @Body() userDeactivateDto: UserDeactivateDto,
   ) {
     return this.adminService.userDeactivate(id, userDeactivateDto, userId);
+  }
+
+  @Patch('users/:id')
+  @Auth(ValidRoles.admin)
+  updateUser(
+    @GetUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() userUpdateDto: UserUpdateDto,
+  ) {
+    return this.adminService.updateUser(id, userUpdateDto, userId);
   }
 
   @Patch('user-invitations/:invitationId/cancel')
